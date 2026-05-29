@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Local-first studio for Indonesian knowledge and encyclopedia short videos with AI scripts, images, TTS choices, and FFmpeg rendering.",
+  "description": "Local-first studio for Indonesian knowledge shorts with AI scripts, image-only visuals, TTS choices, and FFmpeg rendering.",
   "scripts": {
     "dev": "node src/server.js",
     "start": "node src/server.js",

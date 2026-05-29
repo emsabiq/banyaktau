@@ -13,12 +13,12 @@ export default async function handler(req, res) {
       scenes: String(body.sceneCount || 7),
       tts_provider: clean(body.ttsProvider || "openai"),
       image_quality: clean(body.imageQuality || "low"),
-      with_clip: "true"
+      with_clip: "false"
     });
     sendJson(res, 200, {
       queued: true,
       item: null,
-      warnings: ["Workflow GitHub Actions sudah dipicu. Refresh galeri beberapa menit lagi untuk melihat video final."],
+      warnings: ["Workflow GitHub Actions sudah dipicu dalam mode hemat gambar + TTS. Refresh galeri beberapa menit lagi untuk melihat video final."],
       dispatch
     });
   } catch (error) {

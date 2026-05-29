@@ -8,6 +8,30 @@
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
+    <section id="authOverlay" class="auth-overlay active" aria-hidden="false">
+      <form id="authForm" class="login-panel">
+        <div class="login-brand">
+          <span class="login-mark"><img src="/assets/banyaktau-logo-watermark.png" alt=""></span>
+          <div>
+            <p class="top-kicker">Private Studio</p>
+            <h1>BanyakTau Dashboard</h1>
+            <span>Masuk untuk memantau generate, upload, galeri, dan console workflow.</span>
+          </div>
+        </div>
+        <div class="login-signal">
+          <span><b>3x</b><small>jadwal harian</small></span>
+          <span><b>Image</b><small>mode hemat</small></span>
+          <span><b>TTS</b><small>narasi final</small></span>
+        </div>
+        <label>
+          <span>Dashboard PIN</span>
+          <input id="authPin" name="pin" type="password" inputmode="numeric" autocomplete="current-password" required placeholder="Masukkan PIN">
+        </label>
+        <button class="primary" type="submit">Masuk Dashboard</button>
+        <p id="authError" class="form-error" role="alert"></p>
+      </form>
+    </section>
+
     <main class="app-shell">
       <aside class="sidebar">
         <div class="brand">
@@ -21,8 +45,16 @@
         <form id="generateForm" class="form-stack">
           <input name="topic" type="hidden" value="">
           <button id="fullBtn" class="primary make-video-btn" type="submit">Buat Video</button>
-          <p class="one-click-copy">Auto storyboard, gambar, suara, subtitle, dan video final. PIN: 123456.</p>
+          <p class="one-click-copy">Auto storyboard, gambar, suara, subtitle, render final, upload, dan publish jika aktif.</p>
           <div id="selectedIdea" class="selected-idea">Belum ada ide terpilih.</div>
+          <div class="flow-steps" aria-label="Status proses video">
+            <span data-step="ideas"><b>1</b> Ide</span>
+            <span data-step="storyboard"><b>2</b> Story</span>
+            <span data-step="images"><b>3</b> Gambar</span>
+            <span data-step="tts"><b>4</b> TTS</span>
+            <span data-step="render"><b>5</b> Render</span>
+            <span data-step="upload"><b>6</b> Upload</span>
+          </div>
 
           <details class="advanced-fields">
             <summary>Opsi video</summary>
@@ -109,15 +141,16 @@
             <button id="preflightBtn" class="ghost" type="button">Preflight</button>
             <button id="imageBtn" class="ghost d-none" type="button">Buat Gambar</button>
             <button id="ttsBtn" class="ghost d-none" type="button">Buat TTS</button>
-            <button id="clipBtn" class="ghost d-none" type="button">Tambah Clip Veo</button>
             <button id="renderBtn" class="ghost strong d-none" type="button">Render Ulang</button>
-            <button id="menuBtn" class="icon-action" type="button" aria-label="Buka pengaturan">☰</button>
+            <button id="logoutBtn" class="ghost" type="button">Logout</button>
+            <button id="menuBtn" class="icon-action" type="button" aria-label="Buka pengaturan">&#9776;</button>
           </div>
         </header>
 
         <nav class="workspace-tabs" role="tablist" aria-label="Navigasi dashboard">
           <button class="workspace-tab" type="button" data-workspace-tab="analytics">Analytics</button>
           <button class="workspace-tab active" type="button" data-workspace-tab="studio">Studio</button>
+          <button class="workspace-tab" type="button" data-workspace-tab="console">Console</button>
           <button class="workspace-tab" type="button" data-workspace-tab="gallery">Galeri</button>
         </nav>
 
@@ -160,6 +193,42 @@
           </div>
         </div>
 
+        <section id="consolePanel" class="workspace-view" data-workspace-view="console">
+          <section class="workflow-panel">
+            <div class="section-head wide">
+              <div>
+                <strong id="workflowTitle">Menunggu workflow</strong>
+                <span id="workflowMeta">Console GitHub Actions akan tampil saat run berjalan.</span>
+              </div>
+              <div class="run-tools">
+                <span id="runBadge" class="run-badge idle">Idle</span>
+                <span id="runTimer" class="run-timer">00:00</span>
+                <a id="runLink" class="mini-action" href="#" target="_blank" rel="noreferrer" hidden>Actions</a>
+              </div>
+            </div>
+            <div class="progress-line" aria-hidden="true">
+              <span id="progressBar"></span>
+            </div>
+            <div class="run-detail">
+              <strong id="runStatus">Idle</strong>
+              <span id="runDetail">Siap menjalankan generate otomatis gambar + TTS.</span>
+              <b id="runProgressLabel">0%</b>
+            </div>
+            <div id="workflowGraph" class="process-rail"></div>
+          </section>
+
+          <section class="console-panel">
+            <div class="section-head wide">
+              <strong>Live Console</strong>
+              <div class="run-tools">
+                <span id="consoleMeta">0 log</span>
+                <button id="copyConsoleBtn" class="mini-action" type="button">Copy</button>
+              </div>
+            </div>
+            <pre id="consoleOutput">Belum ada output.</pre>
+          </section>
+        </section>
+
         <div id="studioView" class="workspace-view active" data-workspace-view="studio">
           <section id="ideaPanel" class="idea-panel d-none">
             <div class="section-head wide">
@@ -183,7 +252,7 @@
               <strong id="ttsMetric">$0.000</strong>
             </div>
             <div>
-              <span>Clip</span>
+              <span>Clip AI</span>
               <strong id="videoMetric">$0.000</strong>
             </div>
             <div>
@@ -267,8 +336,6 @@
           <div class="settings-tabs" role="tablist" aria-label="Setting API">
             <button class="settings-tab active" type="button" data-settings-tab="ai">AI</button>
             <button class="settings-tab" type="button" data-settings-tab="voice">Suara</button>
-            <button class="settings-tab" type="button" data-settings-tab="video">Video</button>
-            <button class="settings-tab" type="button" data-settings-tab="gemini">Gemini</button>
           </div>
 
           <div class="settings-panel active" data-settings-panel="ai">
@@ -310,49 +377,6 @@
             <label>
               <span>ElevenLabs voice ID</span>
               <input name="elevenlabsVoiceId" placeholder="pFZP...">
-            </label>
-          </div>
-
-          <div class="settings-panel" data-settings-panel="video">
-            <label>
-              <span>Dinoiki / Video API Key</span>
-              <input name="videoApiKey" type="password" autocomplete="off" placeholder="Kosongkan jika tidak diubah">
-            </label>
-            <label>
-              <span>Video Base URL</span>
-              <input name="videoBaseUrl" placeholder="https://ai.dinoiki.com">
-            </label>
-            <label>
-              <span>Model video</span>
-              <input name="videoModel" placeholder="veo-3.1-lite-generate-preview">
-            </label>
-            <label>
-              <span>Mode endpoint video</span>
-              <select name="videoEndpointMode">
-                <option value="gemini">Gemini/Veo long-running</option>
-                <option value="openai-videos">OpenAI-compatible /v1/videos</option>
-              </select>
-            </label>
-            <div class="two-col">
-              <label>
-                <span>Durasi clip</span>
-                <input name="videoSeconds" type="number" min="2" max="8" step="1" value="4">
-              </label>
-              <label>
-                <span>Estimasi $/detik</span>
-                <input name="videoUsdPerSecond" type="number" min="0" step="0.001" value="0.03">
-              </label>
-            </div>
-          </div>
-
-          <div class="settings-panel" data-settings-panel="gemini">
-            <label>
-              <span>Gemini API Key</span>
-              <input name="geminiApiKey" type="password" autocomplete="off" placeholder="Disiapkan untuk nanti">
-            </label>
-            <label>
-              <span>Gemini Base URL</span>
-              <input name="geminiBaseUrl" placeholder="https://generativelanguage.googleapis.com">
             </label>
           </div>
 

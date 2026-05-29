@@ -28,12 +28,13 @@ on:
         required: false
         default: low
       with_clip:
-        description: Try video AI clip true/false
+        description: Disabled cost-saver flag. Video AI clips are never generated.
         required: false
-        default: "true"
+        default: "false"
   schedule:
-    # GitHub cron uses UTC. Runs at 08:15 and 20:15 WIB/Asia-Bangkok.
+    # GitHub cron uses UTC. Runs at 08:15, 14:15, and 20:15 WIB/Asia-Bangkok.
     - cron: "15 1 * * *"
+    - cron: "15 7 * * *"
     - cron: "15 13 * * *"
 
 concurrency:
@@ -76,12 +77,16 @@ jobs:
       ELEVENLABS_MODEL: ${{ secrets.ELEVENLABS_MODEL || 'eleven_multilingual_v2' }}
       ELEVENLABS_VOICE_ID: ${{ secrets.ELEVENLABS_VOICE_ID }}
 
-      VIDEO_API_KEY: ${{ secrets.VIDEO_API_KEY || secrets.GEMINI_API_KEY || secrets.DINOIKI_API_KEY }}
-      VIDEO_BASE_URL: ${{ secrets.VIDEO_BASE_URL || secrets.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com' }}
-      VIDEO_ENDPOINT_MODE: ${{ secrets.VIDEO_ENDPOINT_MODE || 'gemini' }}
-      VIDEO_MODEL: ${{ secrets.VIDEO_MODEL || 'veo-3.1-lite-generate-preview' }}
-      VIDEO_SECONDS: ${{ secrets.VIDEO_SECONDS || '4' }}
-      VIDEO_USD_PER_SECOND: ${{ secrets.VIDEO_USD_PER_SECOND || '0.03' }}
+      BANYAKTAU_WITH_CLIP: "false"
+      VIDEO_PROVIDER: disabled
+      VIDEO_API_KEY: ""
+      VIDEO_BASE_URL: ""
+      VIDEO_ENDPOINT_MODE: disabled
+      VIDEO_MODEL: ""
+      VIDEO_SECONDS: "0"
+      VIDEO_USD_PER_SECOND: "0"
+      GEMINI_API_KEY: ""
+      GEMINI_BASE_URL: ""
       SPEECH_TEMPO: ${{ secrets.SPEECH_TEMPO || '1.15' }}
 
       GRAPH_API_VERSION: ${{ secrets.GRAPH_API_VERSION || 'v25.0' }}
@@ -146,4 +151,4 @@ jobs:
             --scenes "${{ github.event.inputs.scenes }}" \
             --tts-provider "${{ github.event.inputs.tts_provider }}" \
             --image-quality "${{ github.event.inputs.image_quality }}" \
-            --with-clip "${{ github.event.inputs.with_clip || 'true' }}"
+            --with-clip "false"

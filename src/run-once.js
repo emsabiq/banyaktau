@@ -28,10 +28,14 @@ const input = {
   imageSize: argValue("--image-size", process.env.IMAGE_SIZE || "1024x1536")
 };
 
-const withClip = boolValue(argValue("--with-clip", process.env.BANYAKTAU_WITH_CLIP || "false"), false);
+const requestedClip = boolValue(argValue("--with-clip", process.env.BANYAKTAU_WITH_CLIP || "false"), false);
+const withClip = false;
 
 console.log("BanyakTau run started.");
 console.log(`Category=${input.category}, duration=${input.durationSec}, scenes=${input.sceneCount}, withClip=${withClip}`);
+if (requestedClip) {
+  console.log("Clip video AI diminta, tetapi dilewati karena mode hemat gambar + TTS aktif.");
+}
 
 if (remoteEnabled()) {
   await importRemoteState();

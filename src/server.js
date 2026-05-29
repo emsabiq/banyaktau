@@ -4,7 +4,6 @@ import {
   assertReadyToRender,
   ensureAudio,
   ensureImages,
-  ensureProviderClip,
   ffmpegAvailable,
   generateFullItem,
   renderAndPersist,
@@ -34,6 +33,19 @@ app.use("/api", requireDashboardPin);
 app.get("/api/items", async (_req, res, next) => {
   try {
     res.json({ items: await listItems() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/state", async (_req, res, next) => {
+  try {
+    res.json({
+      config: publicConfig(),
+      items: await listItems(),
+      activeRun: null,
+      recentRuns: []
+    });
   } catch (error) {
     next(error);
   }
@@ -107,11 +119,9 @@ app.post("/api/items/:id/tts", async (req, res, next) => {
 
 app.post("/api/items/:id/clip", async (req, res, next) => {
   try {
-    const item = await requireItem(req.params.id);
-    await ensureProviderClip(item, { sceneIndex: req.body?.sceneIndex });
-    item.updatedAt = nowIso();
-    await saveItem(item);
-    res.json({ item });
+    const error = new Error("Generate clip video AI sudah dimatikan. BanyakTau sekarang hanya memakai gambar + TTS agar hemat biaya.");
+    error.status = 410;
+    throw error;
   } catch (error) {
     next(error);
   }
@@ -144,6 +154,6 @@ app.listen(publicConfig().port, () => {
 function requireDashboardPin(req, res, next) {
   const expected = String(process.env.AUTO_DASHBOARD_PIN || "123456").trim();
   const provided = String(req.headers["x-dashboard-pin"] || req.query.pin || "").trim();
-  if (!expected || provided === expected || provided === "123456") return next();
+  if (!expected || provided === expected) return next();
   res.status(401).json({ error: "PIN dashboard tidak valid." });
 }

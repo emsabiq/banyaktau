@@ -68,14 +68,14 @@ export const config = {
     transcribeModel: clean(process.env.OPENAI_TRANSCRIBE_MODEL || "whisper-1")
   },
   video: {
-    provider: clean(process.env.VIDEO_PROVIDER || "gemini-veo"),
-    apiKey: process.env.VIDEO_API_KEY || process.env.GEMINI_API_KEY || process.env.DINOIKI_API_KEY || "",
-    baseUrl: trimSlash(process.env.VIDEO_BASE_URL || process.env.GEMINI_BASE_URL || process.env.DINOIKI_BASE_URL || "https://generativelanguage.googleapis.com"),
-    endpointMode: clean(process.env.VIDEO_ENDPOINT_MODE || "gemini"),
-    model: clean(process.env.VIDEO_MODEL || process.env.DINOIKI_VIDEO_MODEL || "veo-3.1-lite-generate-preview"),
-    aspectRatio: clean(process.env.VIDEO_ASPECT_RATIO || "9:16"),
-    resolution: clean(process.env.VIDEO_RESOLUTION || "720p"),
-    seconds: Math.min(8, Math.max(2, numberEnv("VIDEO_SECONDS", 4)))
+    provider: "disabled",
+    apiKey: "",
+    baseUrl: "",
+    endpointMode: "disabled",
+    model: "",
+    aspectRatio: "9:16",
+    resolution: "720p",
+    seconds: 0
   },
   facebook: {
     enabled: bool(process.env.FACEBOOK_UPLOAD_ENABLED || process.env.BANYAKTAU_FACEBOOK_UPLOAD_ENABLED),
@@ -97,8 +97,8 @@ export const config = {
     maxDurationSec: Math.max(1, numberEnv("INSTAGRAM_MAX_DURATION_SECONDS", 90))
   },
   gemini: {
-    apiKey: process.env.GEMINI_API_KEY || "",
-    baseUrl: trimSlash(process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com")
+    apiKey: "",
+    baseUrl: ""
   },
   elevenlabs: {
     apiKey: process.env.ELEVENLABS_API_KEY || "",
@@ -110,7 +110,7 @@ export const config = {
     storyOutputUsdPer1MTokens: numberEnv("STORY_OUTPUT_USD_PER_1M_TOKENS", 1.6),
     openaiTtsUsdPer1MChars: numberEnv("OPENAI_TTS_USD_PER_1M_CHARS", numberEnv("TTS_USD_PER_1M_CHARS", 15)),
     elevenlabsTtsUsdPer1KChars: numberEnv("ELEVENLABS_TTS_USD_PER_1K_CHARS", 0.1),
-    videoUsdPerSecond: numberEnv("VIDEO_USD_PER_SECOND", 0.03)
+    videoUsdPerSecond: 0
   },
   render: {
     fontTitle: clean(process.env.RENDER_TITLE_FONT || "Georgia"),
@@ -132,22 +132,22 @@ export function publicConfig() {
       imageModel: config.openai.imageModel,
       imageSize: config.openai.imageSize,
       imageQuality: config.openai.imageQuality,
-      videoProvider: config.video.provider,
-      videoBaseUrl: config.video.baseUrl,
-      videoEndpointMode: config.video.endpointMode,
-      videoModel: config.video.model,
-      videoAspectRatio: config.video.aspectRatio,
-      videoResolution: config.video.resolution,
-      videoSeconds: config.video.seconds,
-      videoApiKeySet: bool(config.video.apiKey),
+      videoProvider: "disabled",
+      videoBaseUrl: "",
+      videoEndpointMode: "disabled",
+      videoModel: "",
+      videoAspectRatio: "9:16",
+      videoResolution: "720p",
+      videoSeconds: 0,
+      videoApiKeySet: false,
       facebookUploadEnabled: config.facebook.enabled,
       facebookPageIdSet: bool(config.facebook.pageId),
       facebookPageTokenSet: bool(config.facebook.accessToken || config.facebook.userAccessToken),
       instagramUploadEnabled: config.instagram.enabled,
       instagramIgUserIdSet: bool(config.instagram.igUserId),
       instagramAccessTokenSet: bool(config.instagram.accessToken),
-      geminiApiKeySet: bool(config.gemini.apiKey),
-      geminiBaseUrl: config.gemini.baseUrl,
+      geminiApiKeySet: false,
+      geminiBaseUrl: "",
       openaiApiKeySet: bool(config.openai.apiKey),
       openaiTtsModel: config.openai.ttsModel,
       openaiTtsVoice: config.openai.ttsVoice,
@@ -158,9 +158,10 @@ export function publicConfig() {
     },
     render: config.render,
     pricing: {
-      videoUsdPerSecond: config.pricing.videoUsdPerSecond
+      videoUsdPerSecond: 0
     },
     dashboard: {
+      productionMode: "images-tts-only",
       pinRequired: true
     }
   };
@@ -176,16 +177,8 @@ export async function updateRuntimeSettings(input = {}) {
   const openaiTtsVoice = clean(input.openaiTtsVoice);
   const openaiTtsModel = clean(input.openaiTtsModel);
   const openaiTranscribeModel = clean(input.openaiTranscribeModel);
-  const videoApiKey = clean(input.videoApiKey);
-  const videoBaseUrl = trimSlash(input.videoBaseUrl);
-  const videoEndpointMode = clean(input.videoEndpointMode);
-  const videoModel = clean(input.videoModel);
-  const videoSeconds = Number(input.videoSeconds);
-  const videoUsdPerSecond = Number(input.videoUsdPerSecond);
   const elevenlabsModel = clean(input.elevenlabsModel);
   const elevenlabsVoiceId = clean(input.elevenlabsVoiceId);
-  const geminiKey = clean(input.geminiApiKey);
-  const geminiBaseUrl = trimSlash(input.geminiBaseUrl);
   const speechTempo = Number(input.speechTempo);
 
   if (openaiKey) updates.OPENAI_API_KEY = openaiKey;
@@ -196,16 +189,8 @@ export async function updateRuntimeSettings(input = {}) {
   if (openaiTtsVoice) updates.OPENAI_TTS_VOICE = openaiTtsVoice;
   if (openaiTtsModel) updates.OPENAI_TTS_MODEL = openaiTtsModel;
   if (openaiTranscribeModel) updates.OPENAI_TRANSCRIBE_MODEL = openaiTranscribeModel;
-  if (videoApiKey) updates.VIDEO_API_KEY = videoApiKey;
-  if (videoBaseUrl) updates.VIDEO_BASE_URL = videoBaseUrl;
-  if (["gemini", "openai-videos"].includes(videoEndpointMode)) updates.VIDEO_ENDPOINT_MODE = videoEndpointMode;
-  if (videoModel) updates.VIDEO_MODEL = videoModel;
-  if (Number.isFinite(videoSeconds)) updates.VIDEO_SECONDS = String(Math.min(8, Math.max(2, videoSeconds)));
-  if (Number.isFinite(videoUsdPerSecond)) updates.VIDEO_USD_PER_SECOND = String(Math.max(0, videoUsdPerSecond));
   if (elevenlabsModel) updates.ELEVENLABS_MODEL = elevenlabsModel;
   if (elevenlabsVoiceId) updates.ELEVENLABS_VOICE_ID = elevenlabsVoiceId;
-  if (geminiKey) updates.GEMINI_API_KEY = geminiKey;
-  if (geminiBaseUrl) updates.GEMINI_BASE_URL = geminiBaseUrl;
   if (Number.isFinite(speechTempo)) updates.SPEECH_TEMPO = String(Math.min(1.3, Math.max(0.9, speechTempo)));
 
   if (Object.keys(updates).length) {
@@ -251,16 +236,8 @@ function applyConfigUpdates(updates) {
   if (updates.OPENAI_TTS_MODEL !== undefined) config.openai.ttsModel = updates.OPENAI_TTS_MODEL;
   if (updates.OPENAI_TTS_VOICE !== undefined) config.openai.ttsVoice = updates.OPENAI_TTS_VOICE;
   if (updates.OPENAI_TRANSCRIBE_MODEL !== undefined) config.openai.transcribeModel = updates.OPENAI_TRANSCRIBE_MODEL;
-  if (updates.VIDEO_API_KEY !== undefined) config.video.apiKey = updates.VIDEO_API_KEY;
-  if (updates.VIDEO_BASE_URL !== undefined) config.video.baseUrl = trimSlash(updates.VIDEO_BASE_URL);
-  if (updates.VIDEO_ENDPOINT_MODE !== undefined) config.video.endpointMode = updates.VIDEO_ENDPOINT_MODE;
-  if (updates.VIDEO_MODEL !== undefined) config.video.model = updates.VIDEO_MODEL;
-  if (updates.VIDEO_SECONDS !== undefined) config.video.seconds = Number(updates.VIDEO_SECONDS);
-  if (updates.VIDEO_USD_PER_SECOND !== undefined) config.pricing.videoUsdPerSecond = Number(updates.VIDEO_USD_PER_SECOND);
   if (updates.ELEVENLABS_API_KEY !== undefined) config.elevenlabs.apiKey = updates.ELEVENLABS_API_KEY;
   if (updates.ELEVENLABS_MODEL !== undefined) config.elevenlabs.model = updates.ELEVENLABS_MODEL;
   if (updates.ELEVENLABS_VOICE_ID !== undefined) config.elevenlabs.voiceId = updates.ELEVENLABS_VOICE_ID;
-  if (updates.GEMINI_API_KEY !== undefined) config.gemini.apiKey = updates.GEMINI_API_KEY;
-  if (updates.GEMINI_BASE_URL !== undefined) config.gemini.baseUrl = trimSlash(updates.GEMINI_BASE_URL);
   if (updates.SPEECH_TEMPO !== undefined) config.render.speechTempo = Number(updates.SPEECH_TEMPO);
 }

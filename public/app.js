@@ -4,8 +4,11 @@ const state = {
   ideas: [],
   selectedIdea: null,
   config: null,
+  activeRun: null,
+  recentRuns: [],
   busy: false,
   pollTimer: 0,
+  workflowTimer: 0,
   processStartedAt: 0,
   processLabel: "",
   historyExpanded: false,
@@ -14,8 +17,27 @@ const state = {
 };
 
 const YOUTUBE_UPLOAD_URL = "https://www.youtube.com/upload";
+const STATE_POLL_MS = 15000;
+
+let dashboardPin =
+  new URLSearchParams(window.location.search).get("pin")
+  || localStorage.getItem("banyaktau_pin")
+  || "";
+
+if (dashboardPin) {
+  localStorage.setItem("banyaktau_pin", dashboardPin);
+  const cleanUrl = new URL(window.location.href);
+  if (cleanUrl.searchParams.has("pin")) {
+    cleanUrl.searchParams.delete("pin");
+    window.history.replaceState({}, "", cleanUrl);
+  }
+}
 
 const els = {
+  authOverlay: document.querySelector("#authOverlay"),
+  authForm: document.querySelector("#authForm"),
+  authPin: document.querySelector("#authPin"),
+  authError: document.querySelector("#authError"),
   form: document.querySelector("#generateForm"),
   settingsForm: document.querySelector("#settingsForm"),
   ideaBtn: document.querySelector("#ideaBtn"),
@@ -25,9 +47,9 @@ const els = {
   preflightBtn: document.querySelector("#preflightBtn"),
   imageBtn: document.querySelector("#imageBtn"),
   ttsBtn: document.querySelector("#ttsBtn"),
-  clipBtn: document.querySelector("#clipBtn"),
   renderBtn: document.querySelector("#renderBtn"),
   menuBtn: document.querySelector("#menuBtn"),
+  logoutBtn: document.querySelector("#logoutBtn"),
   closeSettingsBtn: document.querySelector("#closeSettingsBtn"),
   settingsDrawer: document.querySelector("#settingsDrawer"),
   statusText: document.querySelector("#statusText"),
@@ -70,24 +92,54 @@ const els = {
   workspaceViews: document.querySelectorAll("[data-workspace-view]"),
   settingsTabs: document.querySelectorAll("[data-settings-tab]"),
   settingsPanels: document.querySelectorAll("[data-settings-panel]"),
-  flowSteps: document.querySelectorAll("[data-step]")
+  flowSteps: document.querySelectorAll("[data-step]"),
+  workflowTitle: document.querySelector("#workflowTitle"),
+  workflowMeta: document.querySelector("#workflowMeta"),
+  workflowGraph: document.querySelector("#workflowGraph"),
+  runBadge: document.querySelector("#runBadge"),
+  runTimer: document.querySelector("#runTimer"),
+  runLink: document.querySelector("#runLink"),
+  runStatus: document.querySelector("#runStatus"),
+  runDetail: document.querySelector("#runDetail"),
+  runProgressLabel: document.querySelector("#runProgressLabel"),
+  progressBar: document.querySelector("#progressBar"),
+  consoleOutput: document.querySelector("#consoleOutput"),
+  consoleMeta: document.querySelector("#consoleMeta"),
+  copyConsoleBtn: document.querySelector("#copyConsoleBtn")
 };
+
+class ApiError extends Error {
+  constructor(message, status = 0) {
+    super(message);
+    this.status = status;
+  }
+}
 
 init();
 
 async function init() {
   bindEvents();
-  state.config = (await api("/api/health")).config;
+  toggleAuth(!dashboardPin);
+  state.config = (await publicApi("/api/health")).config;
   fillSettingsForm();
-  await refreshItems();
-  pushLog("Dashboard siap.");
+  try {
+    await refreshItems();
+    toggleAuth(false);
+    pushLog("Dashboard siap.");
+    startWorkflowPolling();
+  } catch (error) {
+    handleApiError(error);
+  }
   window.setInterval(() => {
     if (state.processStartedAt) renderAnalytics();
+    renderWorkflowRun();
   }, 1000);
   render();
 }
 
 function bindEvents() {
+  els.authForm?.addEventListener("submit", loginDashboard);
+  els.logoutBtn?.addEventListener("click", logoutDashboard);
   els.form.addEventListener("submit", async (event) => {
     event.preventDefault();
     await generateFull();
@@ -114,12 +166,12 @@ function bindEvents() {
   els.preflightBtn?.addEventListener("click", runPreflight);
   els.imageBtn?.addEventListener("click", generateImages);
   els.ttsBtn?.addEventListener("click", generateTts);
-  els.clipBtn?.addEventListener("click", () => generateClip());
   els.renderBtn?.addEventListener("click", renderVideo);
   els.copyYoutubeBtn?.addEventListener("click", copyCurrentYoutube);
   els.downloadVideoBtn?.addEventListener("click", () => downloadVideo(state.current));
   els.shareYoutubeBtn?.addEventListener("click", () => shareToYoutube(state.current));
   els.copyVideoLinkBtn?.addEventListener("click", () => copyVideoLink(state.current));
+  els.copyConsoleBtn?.addEventListener("click", copyConsole);
 }
 
 async function saveSettings(event) {
@@ -135,28 +187,18 @@ async function saveSettings(event) {
         storyModel: form.get("storyModel"),
         imageModel: form.get("imageModel"),
         elevenlabsApiKey: form.get("elevenlabsApiKey"),
-        videoApiKey: form.get("videoApiKey"),
-        videoBaseUrl: form.get("videoBaseUrl"),
-        videoEndpointMode: form.get("videoEndpointMode"),
-        videoModel: form.get("videoModel"),
-        videoSeconds: Number(form.get("videoSeconds")),
-        videoUsdPerSecond: Number(form.get("videoUsdPerSecond")),
         openaiTtsVoice: form.get("openaiTtsVoice"),
         elevenlabsVoiceId: form.get("elevenlabsVoiceId"),
-        geminiApiKey: form.get("geminiApiKey"),
-        geminiBaseUrl: form.get("geminiBaseUrl"),
         speechTempo: Number(form.get("speechTempo"))
       })
     });
     state.config = data.config;
     els.settingsForm.openaiApiKey.value = "";
     els.settingsForm.elevenlabsApiKey.value = "";
-    els.settingsForm.videoApiKey.value = "";
-    els.settingsForm.geminiApiKey.value = "";
     fillSettingsForm();
     setStatus("Setting tersimpan. Generate berikutnya memakai setting baru.");
   } catch (error) {
-    setStatus(error.message);
+    handleApiError(error);
   } finally {
     setBusy(false);
     render();
@@ -164,9 +206,16 @@ async function saveSettings(event) {
 }
 
 async function refreshItems() {
-  const data = await api("/api/items");
+  const data = await api("/api/state");
+  if (data.config) state.config = data.config;
   state.items = data.items || [];
+  state.activeRun = data.activeRun || null;
+  state.recentRuns = data.recentRuns || [];
   if (!state.current && state.items.length) state.current = state.items[0];
+  if (state.current) {
+    const fresh = state.items.find((item) => item.id === state.current.id);
+    if (fresh) state.current = fresh;
+  }
 }
 
 async function generateIdeas() {
@@ -186,7 +235,7 @@ async function generateIdeas() {
     setStatus(`Dapat ${state.ideas.length} ide. Pilih satu, lalu klik Buat Storyboard.`);
     return state.ideas.length > 0;
   } catch (error) {
-    setStatus(error.message);
+    handleApiError(error);
     return false;
   } finally {
     setBusy(false);
@@ -218,7 +267,7 @@ async function generateDraft() {
     await refreshItems();
     setStatus("Storyboard siap. Kalau naskah sudah cocok, klik Generate Video Final.");
   } catch (error) {
-    setStatus(error.message);
+    handleApiError(error);
   } finally {
     setBusy(false);
     render();
@@ -239,18 +288,19 @@ async function generateFull() {
     if (data.item) state.current = data.item;
     await refreshItems();
     if (data.queued) {
-      setStatus(statusWithWarnings("Workflow GitHub Actions dimulai. Video akan muncul otomatis di Galeri setelah selesai.", data.warnings));
+      setStatus(statusWithWarnings("Workflow GitHub Actions dimulai. Mode hemat: gambar + TTS tanpa clip video AI.", data.warnings));
+      showWorkspaceTab("console");
+      await refreshItems().catch(() => {});
       startResultPolling(previousLatestId);
     } else {
-      const hasClip = data.item.assets?.clips?.length;
       setStatus(statusWithWarnings(
-        hasClip ? "Video final selesai dibuat dengan clip Veo." : "Video final selesai dibuat tanpa clip Veo.",
+        "Video final selesai dibuat dari gambar + TTS tanpa clip video AI.",
         data.warnings
       ));
       finishProcess("Video final selesai.");
     }
   } catch (error) {
-    setStatus(error.message);
+    handleApiError(error);
     finishProcess("Generate gagal.");
   } finally {
     setBusy(false);
@@ -296,7 +346,7 @@ async function runPreflight(options = {}) {
     setStatus(failed.length ? `${data.summary} ${failed[0].name}: ${failed[0].detail}` : data.summary);
     return data;
   } catch (error) {
-    setStatus(`Preflight gagal: ${error.message}`);
+    handleApiError(error);
     throw error;
   } finally {
     if (!options.quiet) {
@@ -315,7 +365,7 @@ async function generateImages() {
     await refreshItems();
     setStatus("Gambar selesai. Klik Render Ulang kalau ingin memperbarui video final.");
   } catch (error) {
-    setStatus(error.message);
+    handleApiError(error);
   } finally {
     setBusy(false);
     render();
@@ -335,28 +385,7 @@ async function generateTts() {
     await refreshItems();
     setStatus(`TTS ${provider} selesai. Klik Render Ulang supaya audio baru masuk ke video.`);
   } catch (error) {
-    setStatus(error.message);
-  } finally {
-    setBusy(false);
-    render();
-  }
-}
-
-async function generateClip(sceneIndex) {
-  if (!state.current) return;
-  const cost = estimateClipCost();
-  const sceneText = sceneIndex ? `scene ${sceneIndex}` : "scene paling cocok";
-  setBusy(true, `Membuat clip Veo Lite ${sceneText} sekitar ${formatUsd(cost)}...`);
-  try {
-    const data = await api(`/api/items/${state.current.id}/clip`, {
-      method: "POST",
-      body: JSON.stringify({ sceneIndex })
-    });
-    state.current = data.item;
-    await refreshItems();
-    setStatus("Clip Veo siap. Klik Render Ulang supaya clip masuk ke video final.");
-  } catch (error) {
-    setStatus(error.message);
+    handleApiError(error);
   } finally {
     setBusy(false);
     render();
@@ -376,7 +405,7 @@ async function renderVideo() {
     await refreshItems();
     setStatus(statusWithWarnings("Render selesai.", data.warnings));
   } catch (error) {
-    setStatus(error.message);
+    handleApiError(error);
   } finally {
     setBusy(false);
     render();
@@ -388,7 +417,7 @@ function formPayload() {
   return {
     topic: form.get("topic"),
     category: form.get("category"),
-    selectedIdea: null,
+    selectedIdea: state.selectedIdea,
     tone: form.get("tone"),
     ttsProvider: form.get("ttsProvider"),
     durationSec: Number(form.get("durationSec")),
@@ -407,23 +436,182 @@ function render() {
   renderCurrent();
   renderProviderStatus();
   renderFlow();
+  renderWorkflowRun();
   renderButtons();
 }
 
 function renderFlow() {
+  const item = state.current;
+  const imageReady = item && (item.assets?.images?.length || 0) >= (item.plan?.scenes?.length || 1);
+  const ttsReady = Boolean(item?.assets?.audio?.path || item?.assets?.audio?.url);
+  const renderReady = Boolean(item?.assets?.video?.url);
+  const uploaded = Boolean(publishSuccess(item));
   let active = "ideas";
-  if (state.current?.assets?.video?.url) active = "video";
-  else if (state.current) active = "storyboard";
-  else if (state.selectedIdea || state.ideas.length) active = "ideas";
+  if (uploaded) active = "upload";
+  else if (renderReady) active = "render";
+  else if (ttsReady) active = "tts";
+  else if (imageReady) active = "images";
+  else if (item) active = "storyboard";
 
   els.flowSteps.forEach((step) => {
-    step.classList.toggle("active", step.dataset.step === active);
-    step.classList.toggle("done",
-      step.dataset.step === "ideas" && Boolean(state.selectedIdea || state.current)
-      || step.dataset.step === "storyboard" && Boolean(state.current)
-      || step.dataset.step === "video" && Boolean(state.current?.assets?.video?.url)
-    );
+    const name = step.dataset.step;
+    const done =
+      name === "ideas" && Boolean(state.selectedIdea || item)
+      || name === "storyboard" && Boolean(item)
+      || name === "images" && Boolean(imageReady)
+      || name === "tts" && Boolean(ttsReady)
+      || name === "render" && Boolean(renderReady)
+      || name === "upload" && Boolean(uploaded);
+    step.classList.toggle("active", name === active && !done);
+    step.classList.toggle("done", done);
   });
+}
+
+function renderWorkflowRun() {
+  if (!els.workflowGraph) return;
+  const run = state.activeRun;
+  const steps = run?.jobs?.length ? liveWorkflowSteps(run.jobs) : localWorkflowSteps();
+  els.workflowGraph.innerHTML = steps.map((step, index) => `
+    <article class="process-node ${escapeAttr(step.state || "pending")}">
+      <i>${index + 1}</i>
+      <strong>${escapeHtml(step.label)}</strong>
+      <small>${escapeHtml(step.detail || "")}</small>
+    </article>
+  `).join("");
+
+  if (!run) {
+    setRunHeader({
+      status: "idle",
+      title: "Menunggu workflow",
+      meta: "Jadwal otomatis 08:15, 14:15, 20:15 WIB. Mode hemat gambar + TTS.",
+      detail: "Belum ada run GitHub Actions aktif.",
+      progress: 0,
+      startedAt: ""
+    });
+    renderConsoleOutput([]);
+    return;
+  }
+
+  setRunHeader({
+    status: run.status || "running",
+    title: run.title || run.name || "BanyakTau Generate",
+    meta: run.branch ? `${run.name || "Workflow"} / ${run.branch}` : run.name || "Workflow",
+    detail: run.detail || run.error || "Workflow berjalan.",
+    progress: typeof run.progress === "number" ? run.progress : run.status === "running" ? 12 : 100,
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt,
+    htmlUrl: run.htmlUrl
+  });
+  renderConsoleOutput(run.logs || []);
+}
+
+function setRunHeader(run) {
+  const status = run.status || "idle";
+  if (els.workflowTitle) els.workflowTitle.textContent = run.title || "Workflow";
+  if (els.workflowMeta) els.workflowMeta.textContent = run.meta || "";
+  if (els.runBadge) {
+    els.runBadge.textContent = status === "running" ? "Running" : status;
+    els.runBadge.className = `run-badge ${status}`;
+  }
+  if (els.runStatus) els.runStatus.textContent = status;
+  if (els.runDetail) els.runDetail.textContent = run.detail || "";
+  if (els.runProgressLabel) els.runProgressLabel.textContent = `${Math.round(Number(run.progress || 0))}%`;
+  if (els.progressBar) {
+    els.progressBar.style.width = `${Math.max(0, Math.min(100, Number(run.progress || 0)))}%`;
+    els.progressBar.classList.toggle("running", status === "running");
+  }
+  if (els.runTimer) els.runTimer.textContent = run.startedAt ? formatElapsed(runDurationMs(run)) : "00:00";
+  if (els.runLink) {
+    els.runLink.href = run.htmlUrl || "#";
+    els.runLink.hidden = !run.htmlUrl;
+  }
+}
+
+function renderConsoleOutput(runLogs = []) {
+  if (!els.consoleOutput) return;
+  const rows = runLogs.length
+    ? runLogs
+    : state.logs.map((entry) => ({ at: entry.time, level: "local", text: entry.message }));
+  const visible = rows.slice(-80);
+  els.consoleMeta.textContent = `${visible.length} log`;
+  els.consoleOutput.innerHTML = visible.length
+    ? visible.map((entry) => consoleLine(entry)).join("\n")
+    : "Belum ada output.";
+  els.consoleOutput.scrollTop = els.consoleOutput.scrollHeight;
+}
+
+function consoleLine(entry) {
+  const time = entry.at ? new Date(entry.at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--:--:--";
+  const level = String(entry.level || "info").toLowerCase();
+  return `<span class="console-time">[${escapeHtml(time)}]</span> <span class="console-${escapeAttr(level)}">${escapeHtml(entry.text || "")}</span>`;
+}
+
+function liveWorkflowSteps(jobs = []) {
+  const steps = [];
+  jobs.forEach((job) => {
+    (job.steps || []).forEach((step) => {
+      steps.push({
+        label: step.name || "Step",
+        detail: liveStepDetail(step),
+        state: mapStepState(step)
+      });
+    });
+  });
+  return steps.length ? steps : localWorkflowSteps();
+}
+
+function liveStepDetail(step) {
+  if (step.status === "completed" && step.started_at && step.completed_at) {
+    return `${step.conclusion || "done"} / ${Math.max(0, Math.round((new Date(step.completed_at) - new Date(step.started_at)) / 1000))}s`;
+  }
+  if (step.status === "in_progress") return "Sedang berjalan";
+  if (step.status === "queued") return "Menunggu runner";
+  return step.conclusion || step.status || "Menunggu";
+}
+
+function mapStepState(step) {
+  if (step.status === "completed") {
+    if (["failure", "cancelled"].includes(step.conclusion)) return "failed";
+    if (step.conclusion === "skipped") return "muted";
+    return "done";
+  }
+  if (step.status === "in_progress") return "active";
+  return "pending";
+}
+
+function localWorkflowSteps() {
+  const item = state.current;
+  const imageReady = item && (item.assets?.images?.length || 0) >= (item.plan?.scenes?.length || 1);
+  const ttsReady = Boolean(item?.assets?.audio?.path || item?.assets?.audio?.url);
+  const renderReady = Boolean(item?.assets?.video?.url);
+  const uploadReady = Boolean(renderReady && item?.assets?.video?.url);
+  const publishReady = publishSuccess(item);
+  return [
+    { label: "Ide unik", state: stepState(false, !item && Boolean(state.ideas.length), Boolean(state.selectedIdea || item)), detail: state.selectedIdea?.title || "Cari dari log" },
+    { label: "Storyboard", state: stepState(false, Boolean(item && !imageReady), Boolean(item)), detail: item?.title || "Menunggu" },
+    { label: "Gambar", state: stepState(false, Boolean(item && !imageReady), Boolean(imageReady)), detail: item ? `${item.assets?.images?.length || 0}/${item.plan?.scenes?.length || 0}` : "Menunggu" },
+    { label: "TTS", state: stepState(false, Boolean(imageReady && !ttsReady), Boolean(ttsReady)), detail: item?.assets?.audio?.provider || "Menunggu" },
+    { label: "Render", state: stepState(false, Boolean(ttsReady && !renderReady), Boolean(renderReady)), detail: renderReady ? "Final siap" : "Gambar ke video" },
+    { label: "Upload", state: stepState(false, Boolean(renderReady && !uploadReady), Boolean(uploadReady)), detail: uploadReady ? "Asset publik" : "Menunggu" },
+    { label: "Publish", state: stepState(false, Boolean(uploadReady && !publishReady), Boolean(publishReady)), detail: publishReady ? "Terkirim" : "Opsional" }
+  ];
+}
+
+function stepState(failed, active, done, muted = false) {
+  if (failed) return "failed";
+  if (active) return "active";
+  if (done) return "done";
+  if (muted) return "muted";
+  return "pending";
+}
+
+function runDurationMs(run) {
+  const start = new Date(run.startedAt || "").getTime();
+  const end = run.status === "running"
+    ? Date.now()
+    : new Date(run.finishedAt || Date.now()).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return 0;
+  return Math.max(0, end - start);
 }
 
 function fillSettingsForm() {
@@ -433,12 +621,6 @@ function fillSettingsForm() {
   els.settingsForm.imageModel.value = state.config.providers?.imageModel || "gpt-image-1-mini";
   els.settingsForm.openaiTtsVoice.value = state.config.providers?.openaiTtsVoice || "shimmer";
   els.settingsForm.elevenlabsVoiceId.value = state.config.providers?.elevenlabsVoiceId || "";
-  els.settingsForm.videoBaseUrl.value = state.config.providers?.videoBaseUrl || "https://ai.dinoiki.com";
-  els.settingsForm.videoEndpointMode.value = state.config.providers?.videoEndpointMode || "gemini";
-  els.settingsForm.videoModel.value = state.config.providers?.videoModel || "veo-3.1-lite-generate-preview";
-  els.settingsForm.videoSeconds.value = state.config.providers?.videoSeconds || 4;
-  els.settingsForm.videoUsdPerSecond.value = state.config.pricing?.videoUsdPerSecond ?? 0.03;
-  els.settingsForm.geminiBaseUrl.value = state.config.providers?.geminiBaseUrl || "https://generativelanguage.googleapis.com";
   els.settingsForm.speechTempo.value = state.config.render?.speechTempo || 1.15;
 }
 
@@ -460,15 +642,14 @@ function toggleSettingsDrawer(open) {
 
 function renderProviderStatus() {
   if (state.config?.dashboard?.vercel) {
-    els.providerStatus.textContent = "GitHub Actions aktif";
+    els.providerStatus.textContent = "GitHub Actions aktif / mode hemat gambar + TTS";
     return;
   }
   const openai = state.config?.providers?.openai ? "OpenAI aktif" : "OpenAI kosong";
   const elevenlabs = state.config?.providers?.elevenlabs ? "Eleven aktif" : "Eleven kosong";
-  const video = state.config?.providers?.videoApiKeySet ? "Video aktif" : "Video kosong";
   const facebook = state.config?.providers?.facebookUploadEnabled ? "FB auto" : "FB mati";
   const instagram = state.config?.providers?.instagramUploadEnabled ? "IG auto" : "IG mati";
-  els.providerStatus.textContent = `${openai} / ${elevenlabs} / ${video} / ${facebook} / ${instagram}`;
+  els.providerStatus.textContent = `${openai} / ${elevenlabs} / clip AI mati / ${facebook} / ${instagram}`;
 }
 
 function renderList() {
@@ -567,7 +748,7 @@ function renderAnalytics() {
 function renderIdeas() {
   if (!state.ideas.length) {
     els.ideaList.innerHTML = "";
-    els.ideaMeta.textContent = `Clip Veo Lite opsional: ${state.config?.providers?.videoSeconds || 4} detik kira-kira ${formatUsd(estimateClipCost())}`;
+    els.ideaMeta.textContent = "Mode hemat aktif: ide dibuat untuk gambar AI + TTS tanpa clip video.";
     return;
   }
   els.ideaMeta.textContent = "Pilih satu ide untuk storyboard";
@@ -641,10 +822,9 @@ function renderCurrent() {
   els.totalMetric.textContent = formatUsd(item.cost.totalUsd);
 
   const imageCount = item.assets.images?.length || 0;
-  const clipCount = item.assets.clips?.length || 0;
   const audio = item.assets.audio?.provider ? `Audio: ${item.assets.audio.provider}` : "Audio: belum";
   const final = item.assets.video?.url ? "Final: siap" : "Final: belum";
-  els.assetStatus.textContent = `Img ${imageCount}/${item.plan.scenes.length} - Clip ${clipCount || 0} - ${audio} - ${final}`;
+  els.assetStatus.textContent = `Img ${imageCount}/${item.plan.scenes.length} - Clip AI mati - ${audio} - ${final}`;
 
   const thumb = thumbnailUrl(item);
   if (els.thumbnailSlot) {
@@ -661,24 +841,17 @@ function renderCurrent() {
 
   els.sceneGrid.innerHTML = item.plan.scenes.map((scene) => {
     const image = item.assets.images?.find((entry) => Number(entry.sceneIndex) === Number(scene.index));
-    const clip = item.assets.clips?.find((entry) => Number(entry.sceneIndex) === Number(scene.index));
     return `
       <article class="scene-card">
-        ${clip?.url ? `<video muted loop playsinline controls src="${clip.url}"></video>` : image?.url ? `<img src="${image.url}" alt="">` : ""}
+        ${image?.url ? `<img src="${image.url}" alt="">` : ""}
         <div class="scene-body">
           <small>Scene ${scene.index}</small>
           <strong>${escapeHtml(scene.screenText)}</strong>
           <p>${escapeHtml(scene.narration)}</p>
-          <button type="button" class="mini-action d-none" data-clip-scene="${scene.index}">
-            ${clip?.url ? "Buat ulang clip" : `Tambah clip ${formatUsd(estimateClipCost())}`}
-          </button>
         </div>
       </article>
     `;
   }).join("");
-  els.sceneGrid.querySelectorAll("[data-clip-scene]").forEach((button) => {
-    button.addEventListener("click", () => generateClip(Number(button.dataset.clipScene)));
-  });
 }
 
 function renderYoutubeCopy(item) {
@@ -734,7 +907,6 @@ function renderButtons() {
   els.settingsBtn.disabled = state.busy;
   if (els.imageBtn) els.imageBtn.disabled = state.busy || !hasItem;
   if (els.ttsBtn) els.ttsBtn.disabled = state.busy || !hasItem || !providerReady(provider);
-  if (els.clipBtn) els.clipBtn.disabled = state.busy || !hasItem || !providerReady("video");
   if (els.renderBtn) els.renderBtn.disabled = state.busy || !hasItem;
   const hasVideo = Boolean(state.current?.assets?.video?.url);
   if (els.downloadVideoBtn) els.downloadVideoBtn.disabled = state.busy || !hasVideo;
@@ -744,7 +916,6 @@ function renderButtons() {
 
 function providerReady(provider) {
   if (provider === "elevenlabs") return Boolean(state.config?.providers?.elevenlabs);
-  if (provider === "video") return Boolean(state.config?.providers?.videoApiKeySet);
   return Boolean(state.config?.providers?.openai);
 }
 
@@ -795,8 +966,72 @@ function statusWithWarnings(message, warnings = []) {
   return firstWarning ? `${message} Catatan: ${firstWarning}` : message;
 }
 
+async function loginDashboard(event) {
+  event.preventDefault();
+  const pin = els.authPin.value.trim();
+  if (!pin) {
+    els.authError.textContent = "PIN wajib diisi.";
+    return;
+  }
+  dashboardPin = pin;
+  localStorage.setItem("banyaktau_pin", pin);
+  try {
+    await refreshItems();
+    toggleAuth(false);
+    startWorkflowPolling();
+    setStatus("Login berhasil. Dashboard siap.");
+    render();
+  } catch (error) {
+    localStorage.removeItem("banyaktau_pin");
+    dashboardPin = "";
+    els.authError.textContent = error.message;
+    toggleAuth(true);
+  }
+}
+
+function logoutDashboard() {
+  localStorage.removeItem("banyaktau_pin");
+  dashboardPin = "";
+  stopWorkflowPolling();
+  toggleAuth(true, "Anda sudah logout.");
+}
+
+function toggleAuth(visible, message = "") {
+  if (!els.authOverlay) return;
+  els.authOverlay.classList.toggle("active", visible);
+  els.authOverlay.setAttribute("aria-hidden", visible ? "false" : "true");
+  document.body.classList.toggle("auth-locked", visible);
+  if (els.authError) els.authError.textContent = message;
+  if (visible) window.setTimeout(() => els.authPin?.focus(), 80);
+}
+
+function startWorkflowPolling() {
+  stopWorkflowPolling();
+  state.workflowTimer = window.setInterval(async () => {
+    if (document.hidden || !dashboardPin) return;
+    try {
+      await refreshItems();
+      render();
+    } catch (error) {
+      handleApiError(error);
+    }
+  }, STATE_POLL_MS);
+}
+
+function stopWorkflowPolling() {
+  window.clearInterval(state.workflowTimer);
+  state.workflowTimer = 0;
+}
+
+async function publicApi(url, options = {}) {
+  return requestJson(url, options);
+}
+
 async function api(url, options = {}) {
-  const pin = localStorage.getItem("banyaktau_pin") || "";
+  return requestJson(url, options, dashboardPin);
+}
+
+async function requestJson(url, options = {}, pin = "") {
   const response = await fetch(url, {
     headers: {
       "Content-Type": "application/json",
@@ -805,16 +1040,29 @@ async function api(url, options = {}) {
     ...options
   });
   const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
-  if (response.status === 401) {
-    const nextPin = window.prompt("Masukkan PIN dashboard BanyakTau");
-    if (nextPin) {
-      localStorage.setItem("banyaktau_pin", nextPin);
-      return api(url, options);
-    }
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { error: text || `HTTP ${response.status}` };
   }
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  if (response.status === 401) {
+    localStorage.removeItem("banyaktau_pin");
+    dashboardPin = "";
+    toggleAuth(true, data.error || "PIN dashboard tidak valid.");
+  }
+  if (!response.ok) throw new ApiError(data.error || `HTTP ${response.status}`, response.status);
   return data;
+}
+
+function handleApiError(error, target = null) {
+  if (error?.status === 401 || /PIN dashboard/i.test(error.message || "")) {
+    toggleAuth(true, error.message);
+    return;
+  }
+  const message = error?.message || "Request gagal.";
+  if (target) target.textContent = message;
+  else setStatus(message);
 }
 
 async function copyText(value) {
@@ -836,13 +1084,20 @@ async function copyText(value) {
   return ok;
 }
 
+async function copyConsole() {
+  const text = els.consoleOutput?.innerText || "";
+  if (!text.trim()) return;
+  await copyText(text);
+  setStatus("Console disalin.");
+}
+
 function absoluteUrl(url) {
   return new URL(url, window.location.origin).href;
 }
 
 function downloadUrl(item) {
   const params = new URLSearchParams({ id: item.id });
-  const pin = localStorage.getItem("banyaktau_pin") || "123456";
+  const pin = dashboardPin || localStorage.getItem("banyaktau_pin") || "";
   if (pin) params.set("pin", pin);
   return `/api/download?${params.toString()}`;
 }
@@ -874,12 +1129,6 @@ function slugify(value) {
 
 function formatUsd(value) {
   return `$${Number(value || 0).toFixed(3)}`;
-}
-
-function estimateClipCost() {
-  const seconds = Number(state.config?.providers?.videoSeconds || 4);
-  const perSecond = Number(state.config?.pricing?.videoUsdPerSecond || 0.03);
-  return seconds * perSecond;
 }
 
 function formatNumber(value) {
@@ -987,4 +1236,8 @@ function escapeHtml(value) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value).replace(/`/g, "&#96;");
 }

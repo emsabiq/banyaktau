@@ -9,7 +9,7 @@ export async function runPreflight() {
   const checks = [];
   checks.push(checkCommand("ffmpeg"));
   checks.push(checkCommand("ffprobe"));
-  checks.push(checkValue("OPENAI_API_KEY", Boolean(config.openai.apiKey), "Story, image, TTS, dan transkripsi butuh key ini."));
+  checks.push(checkValue("OPENAI_API_KEY", Boolean(config.openai.apiKey), "Story, gambar, TTS, dan transkripsi butuh key ini."));
   checks.push(checkValue("PUBLIC_BASE_URL", Boolean(config.publicBaseUrl || process.env.PUBLIC_BASE_URL), "Dashboard butuh base URL publik untuk preview asset."));
 
   const remote = remoteConfig();

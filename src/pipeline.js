@@ -1,14 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { config } from "./config.js";
-import { estimateTtsUsd, estimateVideoUsd } from "./cost.js";
+import { estimateTtsUsd } from "./cost.js";
 import { generateElevenLabsSpeech } from "./elevenlabs.js";
 import { generateOpenAiSpeech, generateSceneImage, transcribeSpeechSegments } from "./openai.js";
 import { renderKnowledgeVideo } from "./render.js";
 import { generateThumbnail } from "./thumbnail.js";
 import { getItem, listContextItems, saveItem } from "./storage.js";
-import { createIdeaRecommendations, createKnowledgeDraft } from "./story-engine.js";
+import { createIdeaRecommendations, createKnowledgeDraft, selectMostNovelIdea } from "./story-engine.js";
 import { nowIso } from "./util.js";
-import { generateVideoClip } from "./video-provider.js";
 
 export async function generateFullItem(input = {}, options = {}) {
   const warnings = [];
@@ -20,10 +19,11 @@ export async function generateFullItem(input = {}, options = {}) {
       category: payload.category || "random",
       durationSec: payload.durationSec || 90
     }, { existingItems });
+    const selectedIdea = selectMostNovelIdea(ideas.ideas || [], existingItems);
     payload = {
       ...payload,
-      selectedIdea: ideas.ideas?.[0] || null,
-      topic: ideas.ideas?.[0]?.topic || payload.topic || ""
+      selectedIdea,
+      topic: selectedIdea?.topic || payload.topic || ""
     };
   }
 
@@ -32,14 +32,8 @@ export async function generateFullItem(input = {}, options = {}) {
   await ensureImages(item, { warnings, strict: true });
   await ensureAudio(item, { provider: item.input.ttsProvider, warnings, force: true });
   await ensureThumbnail(item, { warnings });
-  if (config.video.apiKey && options.withClip !== false) {
-    if (options.requireClip) {
-      await ensureProviderClip(item, { sceneIndex: item.plan?.scenes?.[0]?.index });
-      item.updatedAt = nowIso();
-      await saveItem(item);
-    } else {
-      await ensureOptionalClip(item, { warnings });
-    }
+  if (options.withClip || options.requireClip) {
+    warnings.push("Clip video AI dimatikan agar biaya hemat. Render memakai gambar + TTS saja.");
   }
   await renderAndPersist(item);
   return { item, warnings };
@@ -56,32 +50,14 @@ export async function requireItem(id) {
 }
 
 export async function ensureProviderClip(item, options = {}) {
-  if (!config.video.apiKey) throw new Error("VIDEO_API_KEY / DINOIKI_API_KEY wajib diisi untuk generate cuplikan video.");
-  const scenes = item.plan?.scenes || [];
-  if (!scenes.length) throw new Error("Storyboard belum tersedia.");
-  const requestedIndex = Number(options.sceneIndex);
-  const scene = scenes.find((entry) => Number(entry.index) === requestedIndex) || scenes[0];
-  const prompt = buildClipPrompt(item, scene);
-  const clip = await generateVideoClip({ itemId: item.id, scene, prompt });
-  clip.costUsd = estimateVideoUsd(clip.seconds, config.pricing);
-
-  const clips = (item.assets.clips || []).filter((entry) => Number(entry.sceneIndex) !== Number(scene.index));
-  clips.push(clip);
-  item.assets.clips = sortByScene(clips);
-  item.cost.videoUsd = item.assets.clips.reduce((sum, entry) => sum + Number(entry.costUsd || 0), 0);
-  updateTotalCost(item);
+  const error = new Error("Generate clip video AI sudah dimatikan. BanyakTau sekarang hanya memakai gambar + TTS agar hemat biaya.");
+  error.status = 410;
+  throw error;
 }
 
 export async function ensureOptionalClip(item, options = {}) {
-  if (item.assets?.clips?.length) return;
   const warnings = options.warnings || [];
-  try {
-    await ensureProviderClip(item, { sceneIndex: item.plan?.scenes?.[0]?.index });
-    item.updatedAt = nowIso();
-    await saveItem(item);
-  } catch (error) {
-    warnings.push(`Clip Veo Lite dilewati: ${error.message}`);
-  }
+  warnings.push("Clip video AI dilewati: mode hemat gambar + TTS aktif.");
 }
 
 export async function ensureImages(item, options = {}) {
@@ -180,17 +156,6 @@ export function assertReadyToRender(item) {
 export function ffmpegAvailable() {
   const ffmpeg = spawnSync("ffmpeg", ["-version"], { encoding: "utf8", windowsHide: true });
   return ffmpeg.status === 0;
-}
-
-function buildClipPrompt(item, scene) {
-  return [
-    `Topic: ${item.input?.topic || item.title}.`,
-    `Scene: ${scene.screenText}.`,
-    `Narration meaning: ${scene.narration}.`,
-    "Create a short vertical educational B-roll clip that directly supports this scene.",
-    "Use realistic, clean, bright documentary style with one clear subject and smooth motion.",
-    "Do not include written text, subtitles, logos, watermarks, gore, injuries, or a recognizable public figure."
-  ].join(" ");
 }
 
 async function generateImageWithRetry({ item, scene, size, quality }) {

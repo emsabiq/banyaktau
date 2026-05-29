@@ -11,7 +11,7 @@ export default async function handler(req, res) {
   checks.push(check(
     "WORKFLOW_SECRETS",
     true,
-    "Secret OpenAI/Gemini/upload dicek di GitHub Actions saat workflow berjalan.",
+    "Secret OpenAI/upload dicek di GitHub Actions saat workflow berjalan. Gemini dan clip video tidak dipakai.",
     false
   ));
   if (String(process.env.FACEBOOK_UPLOAD_ENABLED || "").toLowerCase() === "true") {

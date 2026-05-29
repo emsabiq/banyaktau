@@ -26,16 +26,19 @@ function normalizeIdeaInput(input) {
 
 function buildIdeaPrompt(input, context) {
   const recent = Array.isArray(context.existingItems)
-    ? context.existingItems.slice(0, 40).map((item) => `- ${item.title}: ${item.plan?.hook || item.hook || item.input?.topic || item.topic || ""}`)
+    ? context.existingItems.slice(0, 90).map((item) => `- ${item.title}: ${item.plan?.hook || item.hook || item.input?.topic || item.topic || ""}`)
     : [];
 
   return [
-    "Buat 8 rekomendasi ide video pendek untuk channel BanyakTau.",
+    "Buat 10 rekomendasi ide video pendek untuk channel BanyakTau.",
     "Channel ini berisi pengetahuan ringan: sains, sejarah, penemuan, tubuh manusia, alam semesta, teknologi, benda sehari-hari, dan tokoh dunia.",
     "Kamu yang menentukan hook dan judul; jangan beri template kosong dan jangan meminta user mengisi hook sendiri.",
     "Judul harus siap pakai untuk YouTube Shorts: singkat, jelas, maksimal 70 karakter, tanpa slang pembuka seperti 'gimana sih', dan kuat dibaca di thumbnail.",
     "Setiap ide harus punya rasa penasaran kuat, mudah divisualkan dengan gambar AI, dan bisa dijelaskan faktual dalam maksimal 2 menit.",
-    "Pilih ide yang hemat produksi: cukup gambar AI + TTS; jika memakai cuplikan video AI, cukup satu clip pendek sebagai sisipan.",
+    "Pilih ide yang hemat produksi: cukup gambar AI + TTS. Jangan menyarankan cuplikan video AI, footage, b-roll video, atau proses yang butuh video generator.",
+    "Prioritas ide: luar biasa, jarang dipilih channel edukasi umum, punya kontras kuat, dan terasa seperti penonton menemukan pintu rahasia dari benda biasa.",
+    "Setiap ide harus benar-benar berbeda dari riwayat. Jangan ulang judul, objek utama, mekanisme penjelasan, atau hook yang mirip dengan daftar riwayat.",
+    "Jika riwayat banyak berisi sains dasar, geser ke sejarah benda, asal-usul kebiasaan, detail teknologi tersembunyi, atau fenomena alam yang belum muncul.",
     "Jangan pilih klaim medis/keuangan/hukum yang berisiko, teori konspirasi, atau topik yang butuh wajah figur publik modern.",
     "Bahasa hook harus natural seperti kreator Indonesia, bukan judul artikel kaku. Hindari kata yang terlalu lebay seperti ajaib, tergila-gila, dan klaim bombastis tanpa dasar.",
     "Kembalikan JSON valid saja dengan shape:",
@@ -43,7 +46,7 @@ function buildIdeaPrompt(input, context) {
     input.seed ? `Arah topik dari user: ${input.seed}` : "Arah topik dari user: bebas, cari ide paling menarik.",
     `Kategori prioritas: ${input.category}`,
     `Durasi target: ${input.durationSec} detik`,
-    recent.length ? `Hindari duplikasi dari riwayat ini:\n${recent.join("\n")}` : ""
+    recent.length ? `Riwayat/log yang wajib dihindari:\n${recent.join("\n")}` : ""
   ].filter(Boolean).join("\n");
 }
 
@@ -70,11 +73,12 @@ function normalizeIdeas(ideas, input) {
       riskLevel: cleanText(idea?.riskLevel || "rendah", 40),
       estimatedDurationSec: clamp(Number(idea?.estimatedDurationSec || input.durationSec), 45, 120)
     });
-    if (normalized.length >= 8) break;
+    if (normalized.length >= 10) break;
   }
 
-  while (normalized.length < 8) {
-    const fallback = fallbackIdeas(input)[normalized.length % 8];
+  const fallbackRows = fallbackIdeas(input);
+  while (normalized.length < 10) {
+    const fallback = fallbackRows[normalized.length % fallbackRows.length];
     normalized.push({
       ...fallback,
       id: createId("idea")
@@ -82,6 +86,30 @@ function normalizeIdeas(ideas, input) {
   }
 
   return normalized;
+}
+
+export function selectMostNovelIdea(ideas = [], existingItems = []) {
+  const candidates = Array.isArray(ideas) ? ideas.filter(Boolean) : [];
+  if (!candidates.length) return null;
+  const historyDocs = (Array.isArray(existingItems) ? existingItems : [])
+    .slice(0, 160)
+    .map(historyText)
+    .filter(Boolean);
+  if (!historyDocs.length) return candidates[0];
+
+  let best = candidates[0];
+  let bestScore = Number.NEGATIVE_INFINITY;
+  for (const idea of candidates) {
+    const text = ideaText(idea);
+    const maxSimilarity = historyDocs.reduce((max, doc) => Math.max(max, textSimilarity(text, doc)), 0);
+    const visualBoost = Array.isArray(idea.visualPotential) ? Math.min(0.08, idea.visualPotential.length * 0.02) : 0;
+    const score = 1 - maxSimilarity + rareTopicBoost(text) + visualBoost;
+    if (score > bestScore) {
+      best = idea;
+      bestScore = score;
+    }
+  }
+  return best;
 }
 
 function normalizeStringList(value, limit) {
@@ -172,6 +200,26 @@ function fallbackIdeas(input, reason = "") {
       angle: "Bahas inovasi kecil yang terlambat jadi kebiasaan.",
       visualPotential: ["koper klasik", "bandara", "roda kecil close-up"],
       whyGood: "Unik, ringan, dan mudah dibuat visualnya.",
+      riskLevel: "rendah"
+    },
+    {
+      title: "Kenapa Resleting Bisa Menutup dengan Rapi",
+      topic: "cara kerja resleting dan kenapa giginya bisa mengunci",
+      hook: "Resleting terlihat sepele, padahal ia mengatur puluhan gigi kecil seperti mesin yang sangat rapi.",
+      category: "benda sehari-hari",
+      angle: "Buka dari benda kecil yang dipakai tiap hari, lalu jelaskan desain slider dan gigi yang saling mengunci.",
+      visualPotential: ["resleting makro", "gigi logam saling mengunci", "jaket dan tas"],
+      whyGood: "Dekat, jarang dibahas, dan kuat untuk visual makro.",
+      riskLevel: "rendah"
+    },
+    {
+      title: "Kota Pernah Bau Sebelum Ada Pipa Modern",
+      topic: "sejarah sanitasi kota dan lahirnya sistem pembuangan modern",
+      hook: "Sebelum pipa modern, kota besar bisa punya masalah yang tidak kelihatan: bau, limbah, dan penyakit.",
+      category: "sejarah",
+      angle: "Hubungkan kenyamanan kota hari ini dengan revolusi infrastruktur yang jarang terlihat.",
+      visualPotential: ["jalan kota lama", "pipa bawah tanah", "aliran air bersih"],
+      whyGood: "Ada unsur sejarah, teknologi, dan dampak sehari-hari dalam satu cerita.",
       riskLevel: "rendah"
     }
   ];
@@ -301,7 +349,7 @@ function normalizeInput(input) {
 
 function buildPrompt(input, context) {
   const recent = Array.isArray(context.existingItems)
-    ? context.existingItems.slice(0, 40).map((item) => `- ${item.title}: ${item.plan?.hook || item.hook || item.input?.topic || item.topic || ""}`)
+    ? context.existingItems.slice(0, 90).map((item) => `- ${item.title}: ${item.plan?.hook || item.hook || item.input?.topic || item.topic || ""}`)
     : [];
   const idea = input.selectedIdea;
 
@@ -312,6 +360,7 @@ function buildPrompt(input, context) {
     "Wajib faktual dan hati-hati. Jangan membuat klaim palsu, jangan menyebut angka spesifik jika tidak yakin, dan jangan memakai figur publik modern secara kontroversial.",
     "Bahasa harus natural, menyambung, dan enak dibacakan TTS. Jangan kaku seperti artikel Wikipedia. Jangan bertele-tele.",
     "Kamu yang membuat hook, judul, dan alur narasi. Jangan terasa seperti template.",
+    "Topik harus terasa segar dibanding riwayat. Jika ada kemiripan dengan daftar riwayat, geser contoh, sudut pandang, dan mekanisme utama sampai berbeda.",
     "Judul harus siap pakai untuk YouTube Shorts: singkat, jelas, maksimal 70 karakter, tanpa slang pembuka seperti 'gimana sih', dan kuat dibaca di thumbnail.",
     "Awali dengan satu kalimat hook yang membuat orang berhenti scroll, lalu langsung masuk ke penjelasan.",
     idea ? "Pakai ide terpilih user sebagai sumber utama. Jangan mengganti topik atau angle utamanya." : "Jika user belum memilih ide, buat sendiri hook paling kuat dari topik yang tersedia.",
@@ -332,8 +381,67 @@ function buildPrompt(input, context) {
     `Durasi maksimal: ${input.durationSec} detik`,
     `Jumlah scene: ${input.sceneCount}`,
     `Target total narasi: sekitar ${wordTarget(input.durationSec)} kata, jangan lebih dari itu.`,
-    recent.length ? `Hindari duplikasi dari draft terbaru:\n${recent.join("\n")}` : ""
+    recent.length ? `Hindari duplikasi dari log/riwayat terbaru:\n${recent.join("\n")}` : ""
   ].filter(Boolean).join("\n");
+}
+
+function historyText(item = {}) {
+  return [
+    item.title,
+    item.topic,
+    item.input?.topic,
+    item.plan?.hook,
+    item.hook,
+    item.plan?.summary,
+    item.summary,
+    ...(item.plan?.importantPoints || item.importantPoints || [])
+  ].filter(Boolean).join(" ");
+}
+
+function ideaText(idea = {}) {
+  return [
+    idea.title,
+    idea.topic,
+    idea.hook,
+    idea.category,
+    idea.angle,
+    idea.whyGood,
+    ...(idea.visualPotential || [])
+  ].filter(Boolean).join(" ");
+}
+
+function textSimilarity(left, right) {
+  const a = keywordSet(left);
+  const b = keywordSet(right);
+  if (!a.size || !b.size) return 0;
+  let intersection = 0;
+  for (const token of a) {
+    if (b.has(token)) intersection += 1;
+  }
+  return intersection / Math.max(a.size, b.size);
+}
+
+function keywordSet(value) {
+  const stopwords = new Set([
+    "yang", "dan", "atau", "dari", "untuk", "dengan", "karena", "kenapa", "bisa", "cara", "jadi",
+    "ini", "itu", "dalam", "pada", "sebagai", "video", "fakta", "ternyata", "sering", "tidak",
+    "bukan", "saat", "lebih", "kalau", "kita", "mereka", "sebuah", "satu", "hal"
+  ]);
+  return new Set(String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .split(/\s+/)
+    .map((token) => token.replace(/^-+|-+$/g, ""))
+    .filter((token) => token.length >= 4 && !stopwords.has(token)));
+}
+
+function rareTopicBoost(value) {
+  const text = String(value || "").toLowerCase();
+  const rareSignals = [
+    "resleting", "pipa", "sanitasi", "arsip", "kode", "material", "mikro", "bawah tanah",
+    "kebiasaan", "kemasan", "instrumen", "peta", "warna", "bunyi", "bau", "tekstur"
+  ];
+  return rareSignals.some((signal) => text.includes(signal)) ? 0.08 : 0;
 }
 
 function wordTarget(durationSec) {
