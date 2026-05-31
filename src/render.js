@@ -357,7 +357,7 @@ async function writeCaptionAss({ outputPath, item, scenes, narrationDuration, na
     "[V4+ Styles]",
     "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
     `Style: Hook,${config.render.fontTitle},74,&H00FFFFFF,&H000000FF,&H98232A32,&HBB11171C,-1,0,0,0,100,100,0,0,1,3.5,0,5,80,80,140,1`,
-    `Style: SceneTitle,${config.render.fontTitle},42,&H00F7F2DC,&H000000FF,&H90222A2C,&HAA15191D,-1,0,0,0,100,100,0,0,1,2.5,0,7,54,340,78,1`,
+    `Style: SceneTitle,${config.render.fontTitle},42,&H00F7F2DC,&H000000FF,&H90222A2C,&HAA15191D,-1,0,0,0,100,100,0,0,1,2.5,0,7,54,340,132,1`,
     `Style: Subtitle,${config.render.fontBody},58,&H00FFFFFF,&H000000FF,&H9A11171B,&HBF11171B,-1,0,0,0,100,100,0,0,1,4,1,2,80,80,550,1`,
     `Style: Point,${config.render.fontBody},72,&H00FFFFFF,&H000000FF,&H8F11171B,&HCC11171B,-1,0,0,0,100,100,0,0,3,18,0,5,96,96,0,1`,
     `Style: OutroDim,${config.render.fontBody},20,&H82000000,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1`,

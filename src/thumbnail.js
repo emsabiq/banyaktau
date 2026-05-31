@@ -92,7 +92,7 @@ function titleFontSize(lines) {
 
 function titleStartY(lines, fontsize) {
   const totalHeight = (lines.length * fontsize) + ((lines.length - 1) * 12);
-  return Math.max(1088, 1460 - Math.round(totalHeight / 2));
+  return Math.max(1040, 1360 - Math.round(totalHeight / 2));
 }
 
 function fontExpr() {
