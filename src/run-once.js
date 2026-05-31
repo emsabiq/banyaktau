@@ -4,6 +4,7 @@ import { publishToSocials } from "./facebook.js";
 import { generateFullItem } from "./pipeline.js";
 import { absolutizeGeneratedUrls, publicBaseUrl, remoteEnabled, uploadGeneratedStateAndAssets } from "./remote.js";
 import { mergeMemoryItems, saveItem } from "./storage.js";
+import { publishToYoutube } from "./youtube-publisher.js";
 
 function argValue(name, fallback = "") {
   const index = process.argv.indexOf(name);
@@ -97,20 +98,41 @@ function normalizeMemoryPayload(value) {
 }
 
 async function publishSocialsIfEnabled(result) {
-  if (!config.facebook.enabled && !config.instagram.enabled) return;
+  if (!config.facebook.enabled && !config.instagram.enabled && !config.youtube.enabled) return;
   try {
     const item = result.item;
-    const published = await publishToSocials({
-      videoUrl: item.assets?.video?.url || "",
-      title: item.title,
-      description: socialDescription(item),
-      coverUrl: item.assets?.thumbnail?.url || "",
-      durationSec: item.assets?.video?.durationSec || 0
-    });
+    let published = { ok: false, errors: {} };
+    if (config.facebook.enabled || config.instagram.enabled) {
+      try {
+        published = await publishToSocials({
+          videoUrl: item.assets?.video?.url || "",
+          title: item.title,
+          description: socialDescription(item),
+          coverUrl: item.assets?.thumbnail?.url || "",
+          durationSec: item.assets?.video?.durationSec || 0
+        });
+      } catch (error) {
+        published.errors = { ...(published.errors || {}), meta: error.message };
+      }
+    }
+    if (config.youtube.enabled) {
+      try {
+        published.youtube = await publishToYoutube({
+          videoPath: item.assets?.video?.path || "",
+          title: item.title,
+          description: youtubeDescription(item),
+          tags: ["BanyakTau", item.input?.category, item.input?.topic].filter(Boolean),
+          thumbnailPath: item.assets?.thumbnail?.path || ""
+        });
+      } catch (error) {
+        published.errors = { ...(published.errors || {}), youtube: error.message };
+      }
+    }
     const publishedAt = new Date().toISOString();
     item.publish = {
       ...(item.publish || {})
     };
+    if (published.youtube) item.publish.youtube = { ...published.youtube, publishedAt };
     if (published.facebook) item.publish.facebook = { ...published.facebook, publishedAt };
     if (published.instagram) item.publish.instagram = { ...published.instagram, publishedAt };
     if (Object.keys(published.errors || {}).length) {
@@ -151,6 +173,20 @@ function socialDescription(item) {
   ].filter(Boolean).join("\n\n");
 }
 
+function youtubeDescription(item) {
+  const points = (item.plan?.importantPoints || [])
+    .slice(0, 3)
+    .map((point) => `- ${point}`)
+    .join("\n");
+  return [
+    item.plan?.hook || `Ternyata ${item.title} punya fakta yang jarang dibahas.`,
+    cleanCaptionLine(item.plan?.summary),
+    points ? `Poin penting:\n${points}` : "",
+    "BanyakTau membahas sains, sejarah, teknologi, dan fakta sehari-hari dengan singkat.",
+    "#BanyakTau #FaktaMenarik #Shorts #Pengetahuan #YouTubeShorts"
+  ].filter(Boolean).join("\n\n");
+}
+
 function cleanCaptionLine(value) {
   return String(value || "")
     .replace(/\s+/g, " ")
@@ -166,6 +202,7 @@ function socialQuestion(item) {
 
 function publishSummary(published) {
   const rows = [];
+  if (published.youtube) rows.push(`youtube=${published.youtube.url || published.youtube.videoId || "ok"}`);
   if (published.facebook) rows.push(`facebook=${published.facebook.url || published.facebook.videoId || "ok"}`);
   if (published.instagram) rows.push(`instagram=${published.instagram.url || published.instagram.mediaId || "ok"}`);
   if (Object.keys(published.errors || {}).length) rows.push(`errors=${Object.keys(published.errors).join(",")}`);

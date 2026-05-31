@@ -39,6 +39,12 @@ export async function runPreflight() {
     ));
   }
 
+  if (config.youtube.enabled) {
+    checks.push(checkValue("YOUTUBE_CLIENT_ID", Boolean(config.youtube.clientId), "OAuth Client ID YouTube wajib diisi."));
+    checks.push(checkValue("YOUTUBE_CLIENT_SECRET", Boolean(config.youtube.clientSecret), "OAuth Client Secret YouTube wajib diisi."));
+    checks.push(checkValue("YOUTUBE_REFRESH_TOKEN", Boolean(config.youtube.refreshToken), "Refresh token YouTube wajib diisi."));
+  }
+
   checks.push(await checkFile("background_music", path.join(paths.rootDir, "assets", "music", "eksplorasi-literasi.m4a")));
 
   const failed = checks.filter((check) => !check.ok);

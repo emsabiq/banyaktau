@@ -39,6 +39,11 @@ export default async function handler(req, res) {
       || process.env.FACEBOOK_PAGE_ACCESS_TOKEN
     ), "Token Instagram atau token Meta/Facebook dengan izin publish Instagram."));
   }
+  if (String(process.env.YOUTUBE_UPLOAD_ENABLED || "").toLowerCase() === "true") {
+    checks.push(check("YOUTUBE_CLIENT_ID", Boolean(process.env.YOUTUBE_CLIENT_ID), "OAuth Client ID untuk upload YouTube."));
+    checks.push(check("YOUTUBE_CLIENT_SECRET", Boolean(process.env.YOUTUBE_CLIENT_SECRET), "OAuth Client Secret untuk upload YouTube."));
+    checks.push(check("YOUTUBE_REFRESH_TOKEN", Boolean(process.env.YOUTUBE_REFRESH_TOKEN), "Refresh token YouTube untuk auto upload."));
+  }
 
   const driver = clean(process.env.UPLOAD_DRIVER || "auto");
   const hasSftp = Boolean(process.env.SFTP_HOST && process.env.SFTP_USER && process.env.SFTP_PASSWORD && process.env.SFTP_REMOTE_DIR);

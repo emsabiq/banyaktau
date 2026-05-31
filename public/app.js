@@ -683,7 +683,8 @@ function renderProviderStatus() {
   const elevenlabs = state.config?.providers?.elevenlabs ? "Eleven aktif" : "Eleven kosong";
   const facebook = state.config?.providers?.facebookUploadEnabled ? "FB auto" : "FB mati";
   const instagram = state.config?.providers?.instagramUploadEnabled ? "IG auto" : "IG mati";
-  els.providerStatus.textContent = `${openai} / ${elevenlabs} / clip AI mati / ${facebook} / ${instagram}`;
+  const youtube = state.config?.providers?.youtubeUploadEnabled ? "YT auto" : "YT mati";
+  els.providerStatus.textContent = `${openai} / ${elevenlabs} / clip AI mati / ${facebook} / ${instagram} / ${youtube}`;
 }
 
 function renderList() {

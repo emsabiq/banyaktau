@@ -107,6 +107,16 @@ jobs:
       INSTAGRAM_CONTAINER_POLL_SECONDS: ${{ secrets.INSTAGRAM_CONTAINER_POLL_SECONDS || '6' }}
       INSTAGRAM_CONTAINER_MAX_ATTEMPTS: ${{ secrets.INSTAGRAM_CONTAINER_MAX_ATTEMPTS || '90' }}
 
+      YOUTUBE_UPLOAD_ENABLED: ${{ secrets.YOUTUBE_UPLOAD_ENABLED || 'false' }}
+      YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+      YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+      YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+      YOUTUBE_PRIVACY_STATUS: ${{ secrets.YOUTUBE_PRIVACY_STATUS || 'public' }}
+      YOUTUBE_CATEGORY_ID: ${{ secrets.YOUTUBE_CATEGORY_ID || '27' }}
+      YOUTUBE_TAGS: ${{ secrets.YOUTUBE_TAGS || 'BanyakTau,Fakta Menarik,Shorts,Pengetahuan,Sains,Sejarah,Teknologi' }}
+      YOUTUBE_CUSTOM_THUMBNAIL_ENABLED: ${{ secrets.YOUTUBE_CUSTOM_THUMBNAIL_ENABLED || 'true' }}
+      YOUTUBE_THUMBNAIL_UPLOAD_ATTEMPTS: ${{ secrets.YOUTUBE_THUMBNAIL_UPLOAD_ATTEMPTS || '1' }}
+
     steps:
       - uses: actions/checkout@v5
 

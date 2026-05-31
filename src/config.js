@@ -96,6 +96,17 @@ export const config = {
     containerMaxAttempts: Math.min(180, Math.max(5, numberEnv("INSTAGRAM_CONTAINER_MAX_ATTEMPTS", 90))),
     maxDurationSec: Math.max(1, numberEnv("INSTAGRAM_MAX_DURATION_SECONDS", 90))
   },
+  youtube: {
+    enabled: bool(process.env.YOUTUBE_UPLOAD_ENABLED),
+    clientId: clean(process.env.YOUTUBE_CLIENT_ID),
+    clientSecret: process.env.YOUTUBE_CLIENT_SECRET || "",
+    refreshToken: process.env.YOUTUBE_REFRESH_TOKEN || "",
+    privacyStatus: clean(process.env.YOUTUBE_PRIVACY_STATUS || "public"),
+    categoryId: clean(process.env.YOUTUBE_CATEGORY_ID || "27"),
+    tags: clean(process.env.YOUTUBE_TAGS || "BanyakTau,Fakta Menarik,Shorts,Pengetahuan").split(",").map((tag) => clean(tag)).filter(Boolean),
+    customThumbnailEnabled: boolDefault(process.env.YOUTUBE_CUSTOM_THUMBNAIL_ENABLED, true),
+    thumbnailUploadAttempts: Math.min(3, Math.max(1, numberEnv("YOUTUBE_THUMBNAIL_UPLOAD_ATTEMPTS", 1)))
+  },
   gemini: {
     apiKey: "",
     baseUrl: ""
@@ -146,6 +157,9 @@ export function publicConfig() {
       instagramUploadEnabled: config.instagram.enabled,
       instagramIgUserIdSet: bool(config.instagram.igUserId),
       instagramAccessTokenSet: bool(config.instagram.accessToken),
+      youtubeUploadEnabled: config.youtube.enabled,
+      youtubeClientIdSet: bool(config.youtube.clientId),
+      youtubeRefreshTokenSet: bool(config.youtube.refreshToken),
       geminiApiKeySet: false,
       geminiBaseUrl: "",
       openaiApiKeySet: bool(config.openai.apiKey),
