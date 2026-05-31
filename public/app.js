@@ -1277,16 +1277,10 @@ function youtubeTitle(item) {
 function youtubeCaption(item) {
   const title = youtubeTitle(item);
   const hook = item?.plan?.hook || "";
-  const points = (item?.plan?.importantPoints || []).slice(0, 3);
+  const summary = String(item?.plan?.summary || "").replace(/\s+/g, " ").trim();
   const body = [
     hook,
-    "",
-    "Di video ini kita bahas singkat dengan gaya BanyakTau:",
-    ...points.map((point) => `- ${point}`),
-    "",
-    "Kalau kamu suka fakta sains, sejarah, teknologi, dan hal sehari-hari yang sering luput, follow BanyakTau.",
-    "",
-    "#BanyakTau #FaktaMenarik #Shorts #YouTubeShorts #Pengetahuan"
+    summary
   ].filter((line, index, arr) => line || arr[index - 1]);
   return `${title}\n\n${body.join("\n")}`;
 }

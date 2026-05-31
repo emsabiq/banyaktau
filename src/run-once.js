@@ -174,16 +174,10 @@ function socialDescription(item) {
 }
 
 function youtubeDescription(item) {
-  const points = (item.plan?.importantPoints || [])
-    .slice(0, 3)
-    .map((point) => `- ${point}`)
-    .join("\n");
   return [
+    item.title,
     item.plan?.hook || `Ternyata ${item.title} punya fakta yang jarang dibahas.`,
-    cleanCaptionLine(item.plan?.summary),
-    points ? `Poin penting:\n${points}` : "",
-    "BanyakTau membahas sains, sejarah, teknologi, dan fakta sehari-hari dengan singkat.",
-    "#BanyakTau #FaktaMenarik #Shorts #Pengetahuan #YouTubeShorts"
+    cleanCaptionLine(item.plan?.summary)
   ].filter(Boolean).join("\n\n");
 }
 
