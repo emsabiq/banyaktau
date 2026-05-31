@@ -11,6 +11,8 @@ const state = {
   workflowTimer: 0,
   processStartedAt: 0,
   processLabel: "",
+  localStage: "",
+  localStageDetail: "",
   historyExpanded: false,
   galleryExpanded: false,
   logs: []
@@ -25,7 +27,7 @@ let dashboardPin =
   || "";
 
 if (dashboardPin) {
-  localStorage.setItem("banyaktau_pin", dashboardPin);
+  rememberDashboardPin(dashboardPin);
   const cleanUrl = new URL(window.location.href);
   if (cleanUrl.searchParams.has("pin")) {
     cleanUrl.searchParams.delete("pin");
@@ -277,9 +279,11 @@ async function generateDraft() {
 async function generateFull() {
   const previousLatestId = state.items[0]?.id || "";
   startProcess("Generate video otomatis");
+  setLocalStage("preflight", "Mengecek koneksi, konfigurasi, dan aset terakhir...");
   setBusy(true, "Preflight dashboard sebelum generate...");
   try {
     await runPreflight({ quiet: true });
+    setLocalStage("workflow", "Mengirim pekerjaan ke GitHub Actions...");
     setStatus("Membuat video otomatis dari ide sampai final...");
     const data = await api("/api/items/full", {
       method: "POST",
@@ -288,6 +292,7 @@ async function generateFull() {
     if (data.item) state.current = data.item;
     await refreshItems();
     if (data.queued) {
+      setLocalStage("workflow", "Workflow berjalan. Progress live dibaca dari GitHub Actions...");
       setStatus(statusWithWarnings("Workflow GitHub Actions dimulai. Mode hemat: gambar + TTS tanpa clip video AI.", data.warnings));
       showWorkspaceTab("console");
       await refreshItems().catch(() => {});
@@ -395,6 +400,9 @@ async function generateTts() {
 async function renderVideo() {
   if (!state.current) return;
   const provider = new FormData(els.form).get("ttsProvider");
+  startProcess("Render ulang video");
+  setLocalStage("render", "Menggabungkan gambar, subtitle, watermark, musik, dan audio...");
+  showWorkspaceTab("console");
   setBusy(true, "Merender video vertikal...");
   try {
     const data = await api(`/api/items/${state.current.id}/render`, {
@@ -404,8 +412,10 @@ async function renderVideo() {
     state.current = data.item;
     await refreshItems();
     setStatus(statusWithWarnings("Render selesai.", data.warnings));
+    finishProcess("Render selesai.");
   } catch (error) {
     handleApiError(error);
+    finishProcess("Render gagal.");
   } finally {
     setBusy(false);
     render();
@@ -470,7 +480,8 @@ function renderFlow() {
 function renderWorkflowRun() {
   if (!els.workflowGraph) return;
   const run = state.activeRun;
-  const steps = run?.jobs?.length ? liveWorkflowSteps(run.jobs) : localWorkflowSteps();
+  const localRun = state.processStartedAt && (!run || run.status !== "running") ? localProcessRun() : null;
+  const steps = localRun ? localWorkflowSteps() : run?.jobs?.length ? liveWorkflowSteps(run.jobs) : localWorkflowSteps();
   els.workflowGraph.innerHTML = steps.map((step, index) => `
     <article class="process-node ${escapeAttr(step.state || "pending")}">
       <i>${index + 1}</i>
@@ -478,6 +489,12 @@ function renderWorkflowRun() {
       <small>${escapeHtml(step.detail || "")}</small>
     </article>
   `).join("");
+
+  if (localRun) {
+    setRunHeader(localRun);
+    renderConsoleOutput([]);
+    return;
+  }
 
   if (!run) {
     setRunHeader({
@@ -586,15 +603,32 @@ function localWorkflowSteps() {
   const renderReady = Boolean(item?.assets?.video?.url);
   const uploadReady = Boolean(renderReady && item?.assets?.video?.url);
   const publishReady = publishSuccess(item);
+  const stage = state.processStartedAt ? state.localStage : "";
   return [
-    { label: "Ide unik", state: stepState(false, !item && Boolean(state.ideas.length), Boolean(state.selectedIdea || item)), detail: state.selectedIdea?.title || "Cari dari log" },
-    { label: "Storyboard", state: stepState(false, Boolean(item && !imageReady), Boolean(item)), detail: item?.title || "Menunggu" },
-    { label: "Gambar", state: stepState(false, Boolean(item && !imageReady), Boolean(imageReady)), detail: item ? `${item.assets?.images?.length || 0}/${item.plan?.scenes?.length || 0}` : "Menunggu" },
-    { label: "TTS", state: stepState(false, Boolean(imageReady && !ttsReady), Boolean(ttsReady)), detail: item?.assets?.audio?.provider || "Menunggu" },
-    { label: "Render", state: stepState(false, Boolean(ttsReady && !renderReady), Boolean(renderReady)), detail: renderReady ? "Final siap" : "Gambar ke video" },
-    { label: "Upload", state: stepState(false, Boolean(renderReady && !uploadReady), Boolean(uploadReady)), detail: uploadReady ? "Asset publik" : "Menunggu" },
-    { label: "Publish", state: stepState(false, Boolean(uploadReady && !publishReady), Boolean(publishReady)), detail: publishReady ? "Terkirim" : "Opsional" }
+    { label: "Preflight", state: stepState(false, stage === "preflight", Boolean(item)), detail: stage === "preflight" ? state.localStageDetail : "Cek awal" },
+    { label: "Workflow", state: stepState(false, stage === "workflow", Boolean(state.activeRun)), detail: stage === "workflow" ? state.localStageDetail : "GitHub Actions" },
+    { label: "Storyboard", state: stepState(false, stage === "storyboard" || Boolean(item && !imageReady), Boolean(item)), detail: item?.title || "Menunggu" },
+    { label: "Gambar", state: stepState(false, stage === "images" || Boolean(item && !imageReady), Boolean(imageReady)), detail: item ? `${item.assets?.images?.length || 0}/${item.plan?.scenes?.length || 0}` : "Menunggu" },
+    { label: "TTS", state: stepState(false, stage === "tts" || Boolean(imageReady && !ttsReady), Boolean(ttsReady)), detail: item?.assets?.audio?.provider || "Menunggu" },
+    { label: "Render", state: stepState(false, stage === "render" || Boolean(ttsReady && !renderReady), Boolean(renderReady)), detail: stage === "render" ? state.localStageDetail : renderReady ? "Final siap" : "Gambar ke video" },
+    { label: "Upload", state: stepState(false, stage === "upload" || Boolean(renderReady && !uploadReady), Boolean(uploadReady)), detail: uploadReady ? "Asset publik" : "Menunggu" },
+    { label: "Publish", state: stepState(false, stage === "publish" || Boolean(uploadReady && !publishReady), Boolean(publishReady)), detail: publishReady ? "Terkirim" : "Opsional" }
   ];
+}
+
+function localProcessRun() {
+  const steps = localWorkflowSteps();
+  const doneCount = steps.filter((step) => step.state === "done").length;
+  const progress = Math.max(8, Math.min(96, Math.round(((doneCount + 0.35) / steps.length) * 100)));
+  const active = steps.find((step) => step.state === "active");
+  return {
+    status: "running",
+    title: state.processLabel || "Proses berjalan",
+    meta: "Progress lokal dashboard",
+    detail: state.localStageDetail || active?.detail || "Sedang diproses...",
+    progress,
+    startedAt: new Date(state.processStartedAt).toISOString()
+  };
 }
 
 function stepState(failed, active, done, muted = false) {
@@ -947,7 +981,16 @@ function pushLog(message) {
 function startProcess(label) {
   state.processStartedAt = Date.now();
   state.processLabel = label;
+  state.localStage = "";
+  state.localStageDetail = "";
   pushLog(`${label} dimulai.`);
+}
+
+function setLocalStage(stage, detail = "") {
+  state.localStage = stage;
+  state.localStageDetail = detail;
+  if (detail) pushLog(detail);
+  renderWorkflowRun();
 }
 
 function finishProcess(message) {
@@ -958,7 +1001,10 @@ function finishProcess(message) {
   }
   state.processStartedAt = 0;
   state.processLabel = "";
+  state.localStage = "";
+  state.localStageDetail = "";
   renderAnalytics();
+  renderWorkflowRun();
 }
 
 function statusWithWarnings(message, warnings = []) {
@@ -974,7 +1020,7 @@ async function loginDashboard(event) {
     return;
   }
   dashboardPin = pin;
-  localStorage.setItem("banyaktau_pin", pin);
+  rememberDashboardPin(pin);
   try {
     await refreshItems();
     toggleAuth(false);
@@ -982,7 +1028,7 @@ async function loginDashboard(event) {
     setStatus("Login berhasil. Dashboard siap.");
     render();
   } catch (error) {
-    localStorage.removeItem("banyaktau_pin");
+    forgetDashboardPin();
     dashboardPin = "";
     els.authError.textContent = error.message;
     toggleAuth(true);
@@ -990,7 +1036,7 @@ async function loginDashboard(event) {
 }
 
 function logoutDashboard() {
-  localStorage.removeItem("banyaktau_pin");
+  forgetDashboardPin();
   dashboardPin = "";
   stopWorkflowPolling();
   toggleAuth(true, "Anda sudah logout.");
@@ -1047,12 +1093,26 @@ async function requestJson(url, options = {}, pin = "") {
     data = { error: text || `HTTP ${response.status}` };
   }
   if (response.status === 401) {
-    localStorage.removeItem("banyaktau_pin");
+    forgetDashboardPin();
     dashboardPin = "";
     toggleAuth(true, data.error || "PIN dashboard tidak valid.");
   }
   if (!response.ok) throw new ApiError(data.error || `HTTP ${response.status}`, response.status);
   return data;
+}
+
+function rememberDashboardPin(pin) {
+  const value = String(pin || "").trim();
+  if (!value) return;
+  localStorage.setItem("banyaktau_pin", value);
+  const maxAge = 60 * 60 * 24 * 180;
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `banyaktau_pin=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${secure}`;
+}
+
+function forgetDashboardPin() {
+  localStorage.removeItem("banyaktau_pin");
+  document.cookie = "banyaktau_pin=; Max-Age=0; Path=/; SameSite=Lax";
 }
 
 function handleApiError(error, target = null) {

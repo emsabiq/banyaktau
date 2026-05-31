@@ -13,12 +13,12 @@ export async function generateThumbnail(item) {
   const filename = `${item.id}-thumbnail-${safeFilename(item.title)}.jpg`;
   const outputPath = path.join(paths.thumbnailDir, filename);
   const titleLines = fitLines(shortTitle(item.title || item.plan?.hook || "BanyakTau"), {
-    maxChars: 14,
-    maxLines: 4
+    maxChars: 20,
+    maxLines: 5
   });
   const titleSize = titleFontSize(titleLines);
-  const titleY = titleLines.length > 3 ? 1140 : 1220;
-  const titleStep = titleSize + 14;
+  const titleY = titleStartY(titleLines, titleSize);
+  const titleStep = titleSize + 12;
   const textFilters = [
     ...drawLineFilters(titleLines, {
       x: 74,
@@ -75,19 +75,24 @@ function fitLines(value, options) {
     }
   }
   if (line) lines.push(line);
-
-  const limited = lines.slice(0, options.maxLines);
-  if (lines.length > options.maxLines) {
-    limited[limited.length - 1] = limited[limited.length - 1].replace(/[.,!?]+$/g, "");
-  }
-  return limited;
+  return lines.length > options.maxLines ? fitLines(value, {
+    ...options,
+    maxChars: options.maxChars + 4,
+    maxLines: options.maxLines
+  }) : lines;
 }
 
 function titleFontSize(lines) {
   const longest = Math.max(...lines.map((line) => line.length), 1);
-  if (lines.length >= 4 || longest > 16) return 88;
-  if (lines.length === 3 || longest > 13) return 102;
+  if (lines.length >= 5 || longest > 24) return 74;
+  if (lines.length >= 4 || longest > 20) return 84;
+  if (lines.length === 3 || longest > 16) return 96;
   return 118;
+}
+
+function titleStartY(lines, fontsize) {
+  const totalHeight = (lines.length * fontsize) + ((lines.length - 1) * 12);
+  return Math.max(1088, 1460 - Math.round(totalHeight / 2));
 }
 
 function fontExpr() {
