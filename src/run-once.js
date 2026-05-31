@@ -177,7 +177,9 @@ function youtubeDescription(item) {
   return [
     item.title,
     item.plan?.hook || `Ternyata ${item.title} punya fakta yang jarang dibahas.`,
-    cleanCaptionLine(item.plan?.summary)
+    cleanCaptionLine(item.plan?.summary),
+    "Video pengetahuan singkat tentang fakta menarik, sains, sejarah, teknologi, dan hal sehari-hari.",
+    "#BanyakTau #FaktaMenarik #Pengetahuan"
   ].filter(Boolean).join("\n\n");
 }
 

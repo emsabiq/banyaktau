@@ -1280,7 +1280,9 @@ function youtubeCaption(item) {
   const summary = String(item?.plan?.summary || "").replace(/\s+/g, " ").trim();
   const body = [
     hook,
-    summary
+    summary,
+    "Video pengetahuan singkat tentang fakta menarik, sains, sejarah, teknologi, dan hal sehari-hari.",
+    "#BanyakTau #FaktaMenarik #Pengetahuan"
   ].filter((line, index, arr) => line || arr[index - 1]);
   return `${title}\n\n${body.join("\n")}`;
 }
