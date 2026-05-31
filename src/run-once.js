@@ -3,7 +3,7 @@ import { config } from "./config.js";
 import { publishToSocials } from "./facebook.js";
 import { generateFullItem } from "./pipeline.js";
 import { absolutizeGeneratedUrls, publicBaseUrl, remoteEnabled, uploadGeneratedStateAndAssets } from "./remote.js";
-import { mergeMemoryItems, saveItem } from "./storage.js";
+import { listContextItems, mergeMemoryItems, saveItem } from "./storage.js";
 import { publishToYoutube } from "./youtube-publisher.js";
 
 function argValue(name, fallback = "") {
@@ -117,13 +117,17 @@ async function publishSocialsIfEnabled(result) {
     }
     if (config.youtube.enabled) {
       try {
-        published.youtube = await publishToYoutube({
-          videoPath: item.assets?.video?.path || "",
-          title: item.title,
-          description: youtubeDescription(item),
-          tags: ["BanyakTau", item.input?.category, item.input?.topic].filter(Boolean),
-          thumbnailPath: item.assets?.thumbnail?.path || ""
-        });
+        if (await youtubeDailyLimitReached()) {
+          published.errors = { ...(published.errors || {}), youtube: `Batas upload YouTube harian tercapai (${config.youtube.dailyUploadLimit}/hari).` };
+        } else {
+          published.youtube = await publishToYoutube({
+            videoPath: item.assets?.video?.path || "",
+            title: item.title,
+            description: youtubeDescription(item),
+            tags: ["BanyakTau", item.input?.category, item.input?.topic].filter(Boolean),
+            thumbnailPath: item.assets?.thumbnail?.path || ""
+          });
+        }
       } catch (error) {
         published.errors = { ...(published.errors || {}), youtube: error.message };
       }
@@ -154,6 +158,32 @@ async function publishSocialsIfEnabled(result) {
     console.warn(message);
     if (boolValue(process.env.FACEBOOK_STRICT_PUBLISH, false)) throw error;
   }
+}
+
+async function youtubeDailyLimitReached() {
+  const limit = Number(config.youtube.dailyUploadLimit || 0);
+  if (!limit) return false;
+  const items = await mergeKnownItems();
+  const today = dayKey(new Date());
+  const count = items.filter((entry) => {
+    const publishedAt = entry?.publish?.youtube?.publishedAt;
+    return publishedAt && dayKey(new Date(publishedAt)) === today;
+  }).length;
+  return count >= limit;
+}
+
+async function mergeKnownItems() {
+  try {
+    const localItems = await listContextItems();
+    return Array.isArray(localItems) ? localItems : [];
+  } catch {
+    return [];
+  }
+}
+
+function dayKey(date) {
+  if (!(date instanceof Date) || !Number.isFinite(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
 }
 
 function socialDescription(item) {

@@ -116,6 +116,7 @@ jobs:
       YOUTUBE_TAGS: ${{ secrets.YOUTUBE_TAGS || 'BanyakTau,Fakta Menarik,Shorts,Pengetahuan,Sains,Sejarah,Teknologi' }}
       YOUTUBE_CUSTOM_THUMBNAIL_ENABLED: ${{ secrets.YOUTUBE_CUSTOM_THUMBNAIL_ENABLED || 'true' }}
       YOUTUBE_THUMBNAIL_UPLOAD_ATTEMPTS: ${{ secrets.YOUTUBE_THUMBNAIL_UPLOAD_ATTEMPTS || '1' }}
+      YOUTUBE_DAILY_UPLOAD_LIMIT: ${{ secrets.YOUTUBE_DAILY_UPLOAD_LIMIT || '3' }}
 
     steps:
       - uses: actions/checkout@v5

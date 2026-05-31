@@ -105,7 +105,8 @@ export const config = {
     categoryId: clean(process.env.YOUTUBE_CATEGORY_ID || "27"),
     tags: clean(process.env.YOUTUBE_TAGS || "BanyakTau,Fakta Menarik,Shorts,Pengetahuan").split(",").map((tag) => clean(tag)).filter(Boolean),
     customThumbnailEnabled: boolDefault(process.env.YOUTUBE_CUSTOM_THUMBNAIL_ENABLED, true),
-    thumbnailUploadAttempts: Math.min(3, Math.max(1, numberEnv("YOUTUBE_THUMBNAIL_UPLOAD_ATTEMPTS", 1)))
+    thumbnailUploadAttempts: Math.min(3, Math.max(1, numberEnv("YOUTUBE_THUMBNAIL_UPLOAD_ATTEMPTS", 1))),
+    dailyUploadLimit: Math.max(0, numberEnv("YOUTUBE_DAILY_UPLOAD_LIMIT", 3))
   },
   gemini: {
     apiKey: "",
