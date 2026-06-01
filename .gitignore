@@ -8,6 +8,7 @@ npm-debug.log*
 !.env.example
 
 data/items.json
+data/memory.json
 generated/audio/
 generated/clips/
 generated/images/
