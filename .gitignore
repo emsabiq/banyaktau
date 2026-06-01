@@ -3,6 +3,7 @@ npm-debug.log*
 *.log
 
 .env
+.env.backup-*
 *.env
 !.env.example
 

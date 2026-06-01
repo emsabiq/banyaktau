@@ -34,6 +34,8 @@ function trimSlash(value) {
   return clean(value).replace(/\/+$/g, "");
 }
 
+const tiktokUploadPaused = bool(process.env.TIKTOK_UPLOAD_PAUSED);
+
 export const paths = {
   rootDir,
   dataDir: path.join(rootDir, "data"),
@@ -108,6 +110,23 @@ export const config = {
     thumbnailUploadAttempts: Math.min(3, Math.max(1, numberEnv("YOUTUBE_THUMBNAIL_UPLOAD_ATTEMPTS", 1))),
     dailyUploadLimit: Math.max(0, numberEnv("YOUTUBE_DAILY_UPLOAD_LIMIT", 3))
   },
+  tiktok: {
+    enabled: !tiktokUploadPaused && bool(process.env.TIKTOK_UPLOAD_ENABLED || process.env.BANYAKTAU_TIKTOK_UPLOAD_ENABLED),
+    paused: tiktokUploadPaused,
+    clientKey: clean(process.env.TIKTOK_CLIENT_KEY),
+    clientSecret: process.env.TIKTOK_CLIENT_SECRET || "",
+    accessToken: process.env.TIKTOK_ACCESS_TOKEN || "",
+    refreshToken: process.env.TIKTOK_REFRESH_TOKEN || "",
+    openId: clean(process.env.TIKTOK_OPEN_ID),
+    scope: clean(process.env.TIKTOK_SCOPE),
+    redirectUri: clean(process.env.TIKTOK_REDIRECT_URI),
+    publishMode: clean(process.env.TIKTOK_PUBLISH_MODE || "direct").toLowerCase(),
+    privacyLevel: clean(process.env.TIKTOK_PRIVACY_LEVEL || "SELF_ONLY"),
+    disableDuet: boolDefault(process.env.TIKTOK_DISABLE_DUET, false),
+    disableComment: boolDefault(process.env.TIKTOK_DISABLE_COMMENT, false),
+    disableStitch: boolDefault(process.env.TIKTOK_DISABLE_STITCH, false),
+    coverTimestampMs: Math.max(0, numberEnv("TIKTOK_COVER_TIMESTAMP_MS", 1000))
+  },
   gemini: {
     apiKey: "",
     baseUrl: ""
@@ -161,6 +180,12 @@ export function publicConfig() {
       youtubeUploadEnabled: config.youtube.enabled,
       youtubeClientIdSet: bool(config.youtube.clientId),
       youtubeRefreshTokenSet: bool(config.youtube.refreshToken),
+      tiktokUploadEnabled: config.tiktok.enabled,
+      tiktokUploadPaused: config.tiktok.paused,
+      tiktokClientKeySet: bool(config.tiktok.clientKey),
+      tiktokTokenSet: bool(config.tiktok.accessToken || config.tiktok.refreshToken),
+      tiktokPublishMode: config.tiktok.publishMode,
+      tiktokPrivacyLevel: config.tiktok.privacyLevel,
       geminiApiKeySet: false,
       geminiBaseUrl: "",
       openaiApiKeySet: bool(config.openai.apiKey),

@@ -126,6 +126,8 @@ export async function getRunJobs(runId) {
 }
 
 export function publicConfig() {
+  const tiktokPaused = boolEnv("TIKTOK_UPLOAD_PAUSED");
+  const tiktokEnabled = !tiktokPaused && boolEnv("TIKTOK_UPLOAD_ENABLED", "BANYAKTAU_TIKTOK_UPLOAD_ENABLED");
   return {
     port: 0,
     publicBaseUrl: cleanBaseUrl(process.env.PUBLIC_BASE_URL),
@@ -158,6 +160,12 @@ export function publicConfig() {
       youtubeUploadEnabled: String(process.env.YOUTUBE_UPLOAD_ENABLED || "").toLowerCase() === "true",
       youtubeClientIdSet: Boolean(process.env.YOUTUBE_CLIENT_ID),
       youtubeRefreshTokenSet: Boolean(process.env.YOUTUBE_REFRESH_TOKEN),
+      tiktokUploadEnabled: tiktokEnabled,
+      tiktokUploadPaused: tiktokPaused,
+      tiktokClientKeySet: Boolean(process.env.TIKTOK_CLIENT_KEY),
+      tiktokTokenSet: Boolean(process.env.TIKTOK_ACCESS_TOKEN || process.env.TIKTOK_REFRESH_TOKEN),
+      tiktokPublishMode: clean(process.env.TIKTOK_PUBLISH_MODE || "direct").toLowerCase(),
+      tiktokPrivacyLevel: clean(process.env.TIKTOK_PRIVACY_LEVEL || "SELF_ONLY"),
       geminiApiKeySet: false,
       geminiBaseUrl: "",
       openaiApiKeySet: Boolean(process.env.OPENAI_API_KEY),
@@ -188,6 +196,10 @@ export function clean(value) {
 
 function cleanBaseUrl(value) {
   return clean(value).replace(/\/+$/g, "");
+}
+
+function boolEnv(...names) {
+  return names.some((name) => ["1", "true", "yes", "on"].includes(clean(process.env[name]).toLowerCase()));
 }
 
 function queryValue(req, name) {

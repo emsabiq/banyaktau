@@ -91,6 +91,7 @@ export function compactMemoryItem(item = {}) {
     updatedAt: item.updatedAt || item.createdAt || "",
     videoUrl: item.assets?.video?.url || item.videoUrl || "",
     facebookUrl: item.publish?.facebook?.url || item.facebookUrl || "",
-    instagramUrl: item.publish?.instagram?.url || item.instagramUrl || ""
+    instagramUrl: item.publish?.instagram?.url || item.instagramUrl || "",
+    tiktokPublishId: item.publish?.tiktok?.publishId || item.tiktokPublishId || ""
   };
 }

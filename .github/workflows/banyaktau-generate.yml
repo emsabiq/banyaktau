@@ -118,6 +118,23 @@ jobs:
       YOUTUBE_THUMBNAIL_UPLOAD_ATTEMPTS: ${{ secrets.YOUTUBE_THUMBNAIL_UPLOAD_ATTEMPTS || '1' }}
       YOUTUBE_DAILY_UPLOAD_LIMIT: ${{ secrets.YOUTUBE_DAILY_UPLOAD_LIMIT || '3' }}
 
+      TIKTOK_UPLOAD_PAUSED: ${{ secrets.TIKTOK_UPLOAD_PAUSED || 'false' }}
+      TIKTOK_UPLOAD_ENABLED: ${{ secrets.TIKTOK_UPLOAD_ENABLED || secrets.BANYAKTAU_TIKTOK_UPLOAD_ENABLED || 'false' }}
+      TIKTOK_CLIENT_KEY: ${{ secrets.TIKTOK_CLIENT_KEY }}
+      TIKTOK_CLIENT_SECRET: ${{ secrets.TIKTOK_CLIENT_SECRET }}
+      TIKTOK_REDIRECT_URI: ${{ secrets.TIKTOK_REDIRECT_URI }}
+      TIKTOK_AUTH_SCOPES: ${{ secrets.TIKTOK_AUTH_SCOPES || 'user.info.basic,video.upload,video.publish' }}
+      TIKTOK_ACCESS_TOKEN: ${{ secrets.TIKTOK_ACCESS_TOKEN }}
+      TIKTOK_REFRESH_TOKEN: ${{ secrets.TIKTOK_REFRESH_TOKEN }}
+      TIKTOK_OPEN_ID: ${{ secrets.TIKTOK_OPEN_ID }}
+      TIKTOK_SCOPE: ${{ secrets.TIKTOK_SCOPE }}
+      TIKTOK_PUBLISH_MODE: ${{ secrets.TIKTOK_PUBLISH_MODE || 'direct' }}
+      TIKTOK_PRIVACY_LEVEL: ${{ secrets.TIKTOK_PRIVACY_LEVEL || 'SELF_ONLY' }}
+      TIKTOK_DISABLE_DUET: ${{ secrets.TIKTOK_DISABLE_DUET || 'false' }}
+      TIKTOK_DISABLE_COMMENT: ${{ secrets.TIKTOK_DISABLE_COMMENT || 'false' }}
+      TIKTOK_DISABLE_STITCH: ${{ secrets.TIKTOK_DISABLE_STITCH || 'false' }}
+      TIKTOK_COVER_TIMESTAMP_MS: ${{ secrets.TIKTOK_COVER_TIMESTAMP_MS || '1000' }}
+
     steps:
       - uses: actions/checkout@v5
 
@@ -149,6 +166,10 @@ jobs:
 
       - name: Validate source
         run: npm run check
+
+      - name: Refresh TikTok token
+        if: ${{ env.TIKTOK_UPLOAD_ENABLED == 'true' && env.TIKTOK_REFRESH_TOKEN != '' && env.TIKTOK_UPLOAD_PAUSED != 'true' }}
+        run: npm run tiktok:token -- --github-env
 
       - name: Preflight
         run: npm run preflight

@@ -4,6 +4,7 @@ import { publishToSocials } from "./facebook.js";
 import { generateFullItem } from "./pipeline.js";
 import { absolutizeGeneratedUrls, publicBaseUrl, remoteEnabled, uploadGeneratedStateAndAssets } from "./remote.js";
 import { listContextItems, mergeMemoryItems, saveItem } from "./storage.js";
+import { publishToTikTok } from "./tiktok.js";
 import { publishToYoutube } from "./youtube-publisher.js";
 
 function argValue(name, fallback = "") {
@@ -55,8 +56,11 @@ if (remoteEnabled()) {
     const message = `Remote upload gagal: ${error.message}`;
     result.warnings.push(message);
     console.warn(message);
+    if (config.tiktok.enabled) await publishSocialsIfEnabled(result, { tiktokOnly: true });
     if (boolValue(process.env.BANYAKTAU_STRICT_REMOTE, false)) throw error;
   }
+} else if (config.tiktok.enabled) {
+  await publishSocialsIfEnabled(result, { tiktokOnly: true });
 }
 
 console.log(JSON.stringify({
@@ -97,12 +101,14 @@ function normalizeMemoryPayload(value) {
   return [];
 }
 
-async function publishSocialsIfEnabled(result) {
-  if (!config.facebook.enabled && !config.instagram.enabled && !config.youtube.enabled) return;
+async function publishSocialsIfEnabled(result, options = {}) {
+  const tiktokOnly = Boolean(options.tiktokOnly);
+  if (tiktokOnly && !config.tiktok.enabled) return;
+  if (!tiktokOnly && !config.facebook.enabled && !config.instagram.enabled && !config.youtube.enabled && !config.tiktok.enabled) return;
   try {
     const item = result.item;
     let published = { ok: false, errors: {} };
-    if (config.facebook.enabled || config.instagram.enabled) {
+    if (!tiktokOnly && (config.facebook.enabled || config.instagram.enabled)) {
       try {
         published = await publishToSocials({
           videoUrl: item.assets?.video?.url || "",
@@ -115,7 +121,7 @@ async function publishSocialsIfEnabled(result) {
         published.errors = { ...(published.errors || {}), meta: error.message };
       }
     }
-    if (config.youtube.enabled) {
+    if (!tiktokOnly && config.youtube.enabled) {
       try {
         if (await youtubeDailyLimitReached()) {
           published.errors = { ...(published.errors || {}), youtube: `Batas upload YouTube harian tercapai (${config.youtube.dailyUploadLimit}/hari).` };
@@ -132,6 +138,17 @@ async function publishSocialsIfEnabled(result) {
         published.errors = { ...(published.errors || {}), youtube: error.message };
       }
     }
+    if (config.tiktok.enabled) {
+      try {
+        published.tiktok = await publishToTikTok({
+          videoUrl: item.assets?.video?.url || "",
+          videoPath: item.assets?.video?.path || "",
+          caption: socialDescription(item)
+        });
+      } catch (error) {
+        published.errors = { ...(published.errors || {}), tiktok: error.message };
+      }
+    }
     const publishedAt = new Date().toISOString();
     item.publish = {
       ...(item.publish || {})
@@ -139,6 +156,7 @@ async function publishSocialsIfEnabled(result) {
     if (published.youtube) item.publish.youtube = { ...published.youtube, publishedAt };
     if (published.facebook) item.publish.facebook = { ...published.facebook, publishedAt };
     if (published.instagram) item.publish.instagram = { ...published.instagram, publishedAt };
+    if (published.tiktok) item.publish.tiktok = { ...published.tiktok, publishedAt };
     if (Object.keys(published.errors || {}).length) {
       item.publish.errors = {
         ...(item.publish.errors || {}),
@@ -150,7 +168,7 @@ async function publishSocialsIfEnabled(result) {
     }
     await saveItem(item);
     await mergeMemoryItems([item]);
-    await uploadGeneratedStateAndAssets({ item });
+    if (remoteEnabled()) await uploadGeneratedStateAndAssets({ item });
     console.log(`Social publish complete: ${publishSummary(published)}`);
   } catch (error) {
     const message = `Social publish gagal: ${error.message}`;
@@ -231,6 +249,7 @@ function publishSummary(published) {
   if (published.youtube) rows.push(`youtube=${published.youtube.url || published.youtube.videoId || "ok"}`);
   if (published.facebook) rows.push(`facebook=${published.facebook.url || published.facebook.videoId || "ok"}`);
   if (published.instagram) rows.push(`instagram=${published.instagram.url || published.instagram.mediaId || "ok"}`);
+  if (published.tiktok) rows.push(`tiktok=${published.tiktok.publishId || published.tiktok.mode || "ok"}`);
   if (Object.keys(published.errors || {}).length) rows.push(`errors=${Object.keys(published.errors).join(",")}`);
   return rows.join(" ") || "skipped";
 }

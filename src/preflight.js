@@ -45,6 +45,14 @@ export async function runPreflight() {
     checks.push(checkValue("YOUTUBE_REFRESH_TOKEN", Boolean(config.youtube.refreshToken), "Refresh token YouTube wajib diisi."));
   }
 
+  if (config.tiktok.paused) {
+    checks.push(checkValue("TIKTOK_UPLOAD_PAUSED", true, "TikTok upload sedang dipause."));
+  } else if (config.tiktok.enabled) {
+    checks.push(checkValue("TIKTOK_CLIENT_KEY", Boolean(config.tiktok.clientKey), "Client key TikTok wajib diisi."));
+    checks.push(checkValue("TIKTOK_CLIENT_SECRET", Boolean(config.tiktok.clientSecret), "Client secret TikTok wajib diisi."));
+    checks.push(checkValue("TIKTOK_TOKEN", Boolean(config.tiktok.accessToken || config.tiktok.refreshToken), "Access token atau refresh token TikTok wajib diisi."));
+  }
+
   checks.push(await checkFile("background_music", path.join(paths.rootDir, "assets", "music", "eksplorasi-literasi.m4a")));
 
   const failed = checks.filter((check) => !check.ok);

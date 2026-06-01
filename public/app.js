@@ -684,7 +684,8 @@ function renderProviderStatus() {
   const facebook = state.config?.providers?.facebookUploadEnabled ? "FB auto" : "FB mati";
   const instagram = state.config?.providers?.instagramUploadEnabled ? "IG auto" : "IG mati";
   const youtube = state.config?.providers?.youtubeUploadEnabled ? "YT auto" : "YT mati";
-  els.providerStatus.textContent = `${openai} / ${elevenlabs} / clip AI mati / ${facebook} / ${instagram} / ${youtube}`;
+  const tiktok = state.config?.providers?.tiktokUploadEnabled ? "TT auto" : state.config?.providers?.tiktokUploadPaused ? "TT pause" : "TT mati";
+  els.providerStatus.textContent = `${openai} / ${elevenlabs} / clip AI mati / ${facebook} / ${instagram} / ${youtube} / ${tiktok}`;
 }
 
 function renderList() {
@@ -1213,13 +1214,20 @@ function formatElapsed(ms) {
 }
 
 function publishSuccess(item) {
-  return Boolean(item?.publish?.facebook?.url || item?.publish?.instagram?.url);
+  return Boolean(
+    item?.publish?.facebook?.url
+    || item?.publish?.instagram?.url
+    || item?.publish?.youtube?.url
+    || item?.publish?.tiktok?.publishId
+  );
 }
 
 function publishedDate(item) {
   const dates = [
     item?.publish?.facebook?.publishedAt,
-    item?.publish?.instagram?.publishedAt
+    item?.publish?.instagram?.publishedAt,
+    item?.publish?.youtube?.publishedAt,
+    item?.publish?.tiktok?.publishedAt
   ].filter(Boolean).map((value) => new Date(value)).filter((date) => Number.isFinite(date.getTime()));
   if (!dates.length) return null;
   return new Date(Math.max(...dates.map((date) => date.getTime())));

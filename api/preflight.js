@@ -44,6 +44,15 @@ export default async function handler(req, res) {
     checks.push(check("YOUTUBE_CLIENT_SECRET", Boolean(process.env.YOUTUBE_CLIENT_SECRET), "OAuth Client Secret untuk upload YouTube."));
     checks.push(check("YOUTUBE_REFRESH_TOKEN", Boolean(process.env.YOUTUBE_REFRESH_TOKEN), "Refresh token YouTube untuk auto upload."));
   }
+  const tiktokPaused = boolEnv("TIKTOK_UPLOAD_PAUSED");
+  const tiktokEnabled = !tiktokPaused && boolEnv("TIKTOK_UPLOAD_ENABLED", "BANYAKTAU_TIKTOK_UPLOAD_ENABLED");
+  if (tiktokPaused) {
+    checks.push(check("TIKTOK_UPLOAD_PAUSED", true, "TikTok upload sedang dipause.", false));
+  } else if (tiktokEnabled) {
+    checks.push(check("TIKTOK_CLIENT_KEY", Boolean(process.env.TIKTOK_CLIENT_KEY), "Client key TikTok untuk Content Posting API."));
+    checks.push(check("TIKTOK_CLIENT_SECRET", Boolean(process.env.TIKTOK_CLIENT_SECRET), "Client secret TikTok untuk refresh token."));
+    checks.push(check("TIKTOK_TOKEN", Boolean(process.env.TIKTOK_ACCESS_TOKEN || process.env.TIKTOK_REFRESH_TOKEN), "Access token atau refresh token TikTok."));
+  }
 
   const driver = clean(process.env.UPLOAD_DRIVER || "auto");
   const hasSftp = Boolean(process.env.SFTP_HOST && process.env.SFTP_USER && process.env.SFTP_PASSWORD && process.env.SFTP_REMOTE_DIR);
@@ -74,6 +83,10 @@ export default async function handler(req, res) {
 
 function check(name, ok, detail, required = true) {
   return { name, ok: Boolean(ok), detail, required };
+}
+
+function boolEnv(...names) {
+  return names.some((name) => ["1", "true", "yes", "on"].includes(clean(process.env[name]).toLowerCase()));
 }
 
 async function checkUrl(name, url, required = true) {
