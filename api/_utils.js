@@ -95,6 +95,11 @@ export async function getRecentWorkflowRuns(limit = 5) {
   return (data.workflow_runs || []).map(mapWorkflowRun);
 }
 
+export async function getActiveWorkflowRun() {
+  const runs = await getRecentWorkflowRuns(10);
+  return runs.find((run) => ["queued", "in_progress", "waiting", "requested"].includes(run.status)) || null;
+}
+
 export async function getRunJobs(runId) {
   const token = githubToken();
   if (!token || !runId) return [];

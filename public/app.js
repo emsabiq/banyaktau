@@ -277,6 +277,11 @@ async function generateDraft() {
 }
 
 async function generateFull() {
+  if (state.busy || hasRunningWorkflow() || state.pollTimer) {
+    setStatus("Generate sebelumnya masih berjalan. Pantau tab Console sampai selesai agar tidak membuat video dobel.");
+    showWorkspaceTab("console");
+    return;
+  }
   const previousLatestId = state.items[0]?.id || "";
   startProcess("Generate video otomatis");
   setLocalStage("preflight", "Mengecek koneksi, konfigurasi, dan aset terakhir...");
@@ -936,9 +941,10 @@ async function shareToYoutube(item) {
 function renderButtons() {
   const hasItem = Boolean(state.current);
   const provider = new FormData(els.form).get("ttsProvider");
+  const generateLocked = state.busy || hasRunningWorkflow() || Boolean(state.pollTimer);
   if (els.ideaBtn) els.ideaBtn.disabled = state.busy;
   if (els.preflightBtn) els.preflightBtn.disabled = state.busy;
-  els.fullBtn.disabled = state.busy;
+  els.fullBtn.disabled = generateLocked;
   if (els.draftBtn) els.draftBtn.disabled = state.busy;
   els.settingsBtn.disabled = state.busy;
   if (els.imageBtn) els.imageBtn.disabled = state.busy || !hasItem;
@@ -948,6 +954,10 @@ function renderButtons() {
   if (els.downloadVideoBtn) els.downloadVideoBtn.disabled = state.busy || !hasVideo;
   if (els.shareYoutubeBtn) els.shareYoutubeBtn.disabled = state.busy || !hasVideo;
   if (els.copyVideoLinkBtn) els.copyVideoLinkBtn.disabled = state.busy || !hasVideo;
+}
+
+function hasRunningWorkflow() {
+  return ["running", "queued", "in_progress", "waiting", "requested"].includes(String(state.activeRun?.status || "").toLowerCase());
 }
 
 function providerReady(provider) {

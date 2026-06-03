@@ -320,6 +320,7 @@ export async function publishToFacebook({ videoUrl, title, description }) {
   try {
     return await publishFacebookReel({ token, videoUrl, title, description });
   } catch (error) {
+    if (!config.facebook.reelFallbackEnabled) throw error;
     console.warn(`Facebook Reel gagal, coba fallback Page video: ${error.message}`);
     const fallback = await publishFacebookPageVideo({ token, videoUrl, title, description });
     return { ...fallback, fallbackFrom: "facebook_reel" };

@@ -1,4 +1,4 @@
-import { clean, dispatchWorkflow, methodAllowed, readBody, requireAuth, sendJson } from "../_utils.js";
+import { clean, dispatchWorkflow, getActiveWorkflowRun, methodAllowed, readBody, requireAuth, sendJson } from "../_utils.js";
 
 export default async function handler(req, res) {
   if (!methodAllowed(req, res, ["POST"])) return;
@@ -6,6 +6,21 @@ export default async function handler(req, res) {
 
   try {
     const body = await readBody(req);
+    const activeRun = await getActiveWorkflowRun();
+    if (activeRun) {
+      sendJson(res, 200, {
+        queued: true,
+        item: null,
+        warnings: ["Masih ada workflow generate yang berjalan, jadi dispatch baru tidak dikirim agar tidak membuat video/posting dobel."],
+        dispatch: {
+          ok: true,
+          skipped: true,
+          reason: "active_workflow_exists",
+          existingRun: activeRun
+        }
+      });
+      return;
+    }
     const dispatch = await dispatchWorkflow({
       topic: clean(body.topic || body.selectedIdea?.topic || ""),
       category: clean(body.category || body.selectedIdea?.category || "random"),

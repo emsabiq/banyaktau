@@ -1,6 +1,6 @@
 import { ensureProjectDirs } from "./config.js";
 import { config } from "./config.js";
-import { publishToSocials } from "./facebook.js";
+import { publishToFacebook, publishToInstagram } from "./facebook.js";
 import { generateFullItem } from "./pipeline.js";
 import { absolutizeGeneratedUrls, publicBaseUrl, remoteEnabled, uploadGeneratedStateAndAssets } from "./remote.js";
 import { listContextItems, mergeMemoryItems, saveItem } from "./storage.js";
@@ -32,6 +32,7 @@ const input = {
 
 const requestedClip = boolValue(argValue("--with-clip", process.env.BANYAKTAU_WITH_CLIP || "false"), false);
 const withClip = false;
+const dailyGenerateLimit = Math.max(0, Number(process.env.BANYAKTAU_DAILY_GENERATE_LIMIT || "3") || 0);
 
 console.log("BanyakTau run started.");
 console.log(`Category=${input.category}, duration=${input.durationSec}, scenes=${input.sceneCount}, withClip=${withClip}`);
@@ -41,6 +42,16 @@ if (requestedClip) {
 
 if (remoteEnabled()) {
   await importRemoteState();
+}
+
+if (!boolValue(process.env.BANYAKTAU_FORCE_GENERATE, false) && await dailyGenerationLimitReached()) {
+  console.log(JSON.stringify({
+    status: "skipped",
+    reason: `Batas generate harian tercapai (${dailyGenerateLimit}/hari).`,
+    dateKey: localDayKey(new Date()),
+    dailyGenerateLimit
+  }, null, 2));
+  process.exit(0);
 }
 
 const result = await generateFullItem(input, { withClip, requireClip: withClip });
@@ -103,25 +114,33 @@ function normalizeMemoryPayload(value) {
 
 async function publishSocialsIfEnabled(result, options = {}) {
   const tiktokOnly = Boolean(options.tiktokOnly);
-  if (tiktokOnly && !config.tiktok.enabled) return;
-  if (!tiktokOnly && !config.facebook.enabled && !config.instagram.enabled && !config.youtube.enabled && !config.tiktok.enabled) return;
+  const targets = resolvePublishTargets({ tiktokOnly });
+  if (!targets.length) return;
   try {
     const item = result.item;
     let published = { ok: false, errors: {} };
-    if (!tiktokOnly && (config.facebook.enabled || config.instagram.enabled)) {
+    const publishOptions = {
+      videoUrl: item.assets?.video?.url || "",
+      title: item.title,
+      description: socialDescription(item),
+      coverUrl: item.assets?.thumbnail?.url || "",
+      durationSec: item.assets?.video?.durationSec || 0
+    };
+    if (targets.includes("facebook")) {
       try {
-        published = await publishToSocials({
-          videoUrl: item.assets?.video?.url || "",
-          title: item.title,
-          description: socialDescription(item),
-          coverUrl: item.assets?.thumbnail?.url || "",
-          durationSec: item.assets?.video?.durationSec || 0
-        });
+        published.facebook = await publishToFacebook(publishOptions);
       } catch (error) {
-        published.errors = { ...(published.errors || {}), meta: error.message };
+        published.errors = { ...(published.errors || {}), facebook: error.message };
       }
     }
-    if (!tiktokOnly && config.youtube.enabled) {
+    if (targets.includes("instagram")) {
+      try {
+        published.instagram = await publishToInstagram(publishOptions);
+      } catch (error) {
+        published.errors = { ...(published.errors || {}), instagram: error.message };
+      }
+    }
+    if (targets.includes("youtube")) {
       try {
         if (await youtubeDailyLimitReached()) {
           published.errors = { ...(published.errors || {}), youtube: `Batas upload YouTube harian tercapai (${config.youtube.dailyUploadLimit}/hari).` };
@@ -138,7 +157,7 @@ async function publishSocialsIfEnabled(result, options = {}) {
         published.errors = { ...(published.errors || {}), youtube: error.message };
       }
     }
-    if (config.tiktok.enabled) {
+    if (targets.includes("tiktok")) {
       try {
         published.tiktok = await publishToTikTok({
           videoUrl: item.assets?.video?.url || "",
@@ -151,7 +170,12 @@ async function publishSocialsIfEnabled(result, options = {}) {
     }
     const publishedAt = new Date().toISOString();
     item.publish = {
-      ...(item.publish || {})
+      ...(item.publish || {}),
+      policy: {
+        mode: publishTargetMode(),
+        targets,
+        onePerRun: targets.length === 1
+      }
     };
     if (published.youtube) item.publish.youtube = { ...published.youtube, publishedAt };
     if (published.facebook) item.publish.facebook = { ...published.facebook, publishedAt };
@@ -178,6 +202,52 @@ async function publishSocialsIfEnabled(result, options = {}) {
   }
 }
 
+async function dailyGenerationLimitReached() {
+  if (!dailyGenerateLimit) return false;
+  const items = await mergeKnownItems();
+  const today = localDayKey(new Date());
+  const count = items.filter((entry) => {
+    if (!entry?.assets?.video?.url && entry?.status !== "rendered" && !entry?.videoUrl) return false;
+    const generatedAt = entry.createdAt || entry.updatedAt;
+    return generatedAt && localDayKey(new Date(generatedAt)) === today;
+  }).length;
+  if (count >= dailyGenerateLimit) {
+    console.log(`Daily generate limit reached: ${count}/${dailyGenerateLimit} for ${today}.`);
+  }
+  return count >= dailyGenerateLimit;
+}
+
+function publishTargetMode() {
+  return String(process.env.BANYAKTAU_PUBLISH_TARGETS || process.env.BANYAKTAU_PUBLISH_TARGET || "auto")
+    .trim()
+    .toLowerCase();
+}
+
+function resolvePublishTargets(options = {}) {
+  if (options.tiktokOnly) return config.tiktok.enabled ? ["tiktok"] : [];
+  const enabled = enabledPublishTargets();
+  const mode = publishTargetMode();
+  if (!enabled.length || ["none", "off", "false", "0"].includes(mode)) return [];
+  if (mode === "all") return enabled;
+  if (mode === "auto" || mode === "single" || mode === "one") return enabled.slice(0, 1);
+
+  const requested = mode
+    .split(/[\s,]+/)
+    .map((target) => target.trim())
+    .filter(Boolean);
+  const selected = requested.filter((target) => enabled.includes(target));
+  return selected.length ? selected : enabled.slice(0, 1);
+}
+
+function enabledPublishTargets() {
+  const targets = [];
+  if (config.tiktok.enabled) targets.push("tiktok");
+  if (config.youtube.enabled) targets.push("youtube");
+  if (config.instagram.enabled) targets.push("instagram");
+  if (config.facebook.enabled) targets.push("facebook");
+  return targets;
+}
+
 async function youtubeDailyLimitReached() {
   const limit = Number(config.youtube.dailyUploadLimit || 0);
   if (!limit) return false;
@@ -202,6 +272,23 @@ async function mergeKnownItems() {
 function dayKey(date) {
   if (!(date instanceof Date) || !Number.isFinite(date.getTime())) return "";
   return date.toISOString().slice(0, 10);
+}
+
+function localDayKey(date) {
+  if (!(date instanceof Date) || !Number.isFinite(date.getTime())) return "";
+  const timeZone = process.env.BANYAKTAU_TIME_ZONE || "Asia/Bangkok";
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).formatToParts(date);
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+  } catch {
+    return date.toISOString().slice(0, 10);
+  }
 }
 
 function socialDescription(item) {

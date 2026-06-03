@@ -87,7 +87,8 @@ export const config = {
     userAccessToken: process.env.BANYAKTAU_FACEBOOK_USER_ACCESS_TOKEN || process.env.FACEBOOK_USER_ACCESS_TOKEN || "",
     mediaType: clean(process.env.FACEBOOK_MEDIA_TYPE || "reel").toLowerCase(),
     videoState: clean(process.env.FACEBOOK_VIDEO_STATE || "PUBLISHED"),
-    titlePrefix: clean(process.env.FACEBOOK_TITLE_PREFIX || "")
+    titlePrefix: clean(process.env.FACEBOOK_TITLE_PREFIX || ""),
+    reelFallbackEnabled: boolDefault(process.env.FACEBOOK_REEL_FALLBACK_ENABLED, false)
   },
   instagram: {
     enabled: bool(process.env.INSTAGRAM_UPLOAD_ENABLED || process.env.BANYAKTAU_INSTAGRAM_UPLOAD_ENABLED),
