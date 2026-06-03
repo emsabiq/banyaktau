@@ -192,7 +192,15 @@ async function publishSocialsIfEnabled(result, options = {}) {
     }
     await saveItem(item);
     await mergeMemoryItems([item]);
-    if (remoteEnabled()) await uploadGeneratedStateAndAssets({ item });
+    if (remoteEnabled()) {
+      try {
+        await uploadGeneratedStateAndAssets({ item });
+      } catch (error) {
+        const message = `Remote state setelah publish gagal: ${error.message}`;
+        result.warnings.push(message);
+        console.warn(message);
+      }
+    }
     console.log(`Social publish complete: ${publishSummary(published)}`);
   } catch (error) {
     const message = `Social publish gagal: ${error.message}`;
@@ -204,17 +212,53 @@ async function publishSocialsIfEnabled(result, options = {}) {
 
 async function dailyGenerationLimitReached() {
   if (!dailyGenerateLimit) return false;
-  const items = await mergeKnownItems();
+  const [items, workflowCount] = await Promise.all([
+    mergeKnownItems(),
+    countSuccessfulWorkflowRunsToday()
+  ]);
   const today = localDayKey(new Date());
-  const count = items.filter((entry) => {
+  const stateCount = items.filter((entry) => {
     if (!entry?.assets?.video?.url && entry?.status !== "rendered" && !entry?.videoUrl) return false;
     const generatedAt = entry.createdAt || entry.updatedAt;
     return generatedAt && localDayKey(new Date(generatedAt)) === today;
   }).length;
+  const count = Math.max(stateCount, workflowCount);
   if (count >= dailyGenerateLimit) {
-    console.log(`Daily generate limit reached: ${count}/${dailyGenerateLimit} for ${today}.`);
+    console.log(`Daily generate limit reached: ${count}/${dailyGenerateLimit} for ${today} (state=${stateCount}, workflow=${workflowCount}).`);
   }
   return count >= dailyGenerateLimit;
+}
+
+async function countSuccessfulWorkflowRunsToday() {
+  const token = process.env.GITHUB_TOKEN || "";
+  const repo = process.env.GITHUB_REPOSITORY || "";
+  const workflow = process.env.BANYAKTAU_WORKFLOW_FILE || "banyaktau-generate.yml";
+  if (!token || !repo) return 0;
+  try {
+    const url = new URL(`https://api.github.com/repos/${repo}/actions/workflows/${encodeURIComponent(workflow)}/runs`);
+    url.searchParams.set("per_page", "50");
+    url.searchParams.set("status", "success");
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "banyaktau-runner"
+      },
+      cache: "no-store"
+    });
+    if (!response.ok) return 0;
+    const data = await response.json();
+    const today = localDayKey(new Date());
+    return (data.workflow_runs || []).filter((run) => (
+      run.conclusion === "success"
+      && ["schedule", "workflow_dispatch"].includes(run.event)
+      && localDayKey(new Date(run.created_at)) === today
+    )).length;
+  } catch (error) {
+    console.warn(`Hitung run GitHub harian gagal: ${error.message}`);
+    return 0;
+  }
 }
 
 function publishTargetMode() {

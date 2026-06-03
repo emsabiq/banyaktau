@@ -100,6 +100,19 @@ export async function getActiveWorkflowRun() {
   return runs.find((run) => ["queued", "in_progress", "waiting", "requested"].includes(run.status)) || null;
 }
 
+export async function getDailyWorkflowLimitStatus() {
+  const limit = Math.max(0, Number(process.env.BANYAKTAU_DAILY_GENERATE_LIMIT || "3") || 0);
+  if (!limit) return { limit, count: 0, reached: false, dateKey: localDayKey(new Date()) };
+  const runs = await getRecentWorkflowRuns(50);
+  const dateKey = localDayKey(new Date());
+  const count = runs.filter((run) => (
+    run.conclusion === "success"
+    && ["schedule", "workflow_dispatch"].includes(run.event)
+    && localDayKey(new Date(run.created_at)) === dateKey
+  )).length;
+  return { limit, count, reached: count >= limit, dateKey };
+}
+
 export async function getRunJobs(runId) {
   const token = githubToken();
   if (!token || !runId) return [];
@@ -230,6 +243,23 @@ function mapWorkflowRun(run) {
     updated_at: run.updated_at,
     html_url: run.html_url
   };
+}
+
+function localDayKey(date) {
+  if (!(date instanceof Date) || !Number.isFinite(date.getTime())) return "";
+  const timeZone = clean(process.env.BANYAKTAU_TIME_ZONE || "Asia/Bangkok");
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).formatToParts(date);
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+  } catch {
+    return date.toISOString().slice(0, 10);
+  }
 }
 
 function githubRepo() {

@@ -1,4 +1,4 @@
-import { clean, dispatchWorkflow, getActiveWorkflowRun, methodAllowed, readBody, requireAuth, sendJson } from "../_utils.js";
+import { clean, dispatchWorkflow, getActiveWorkflowRun, getDailyWorkflowLimitStatus, methodAllowed, readBody, requireAuth, sendJson } from "../_utils.js";
 
 export default async function handler(req, res) {
   if (!methodAllowed(req, res, ["POST"])) return;
@@ -18,6 +18,17 @@ export default async function handler(req, res) {
           reason: "active_workflow_exists",
           existingRun: activeRun
         }
+      });
+      return;
+    }
+    const daily = await getDailyWorkflowLimitStatus();
+    if (daily.reached) {
+      sendJson(res, 200, {
+        queued: false,
+        skipped: true,
+        item: null,
+        warnings: [`Batas generate harian sudah tercapai (${daily.count}/${daily.limit}) untuk ${daily.dateKey}.`],
+        daily
       });
       return;
     }

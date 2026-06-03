@@ -294,6 +294,11 @@ async function generateFull() {
       method: "POST",
       body: JSON.stringify(formPayload())
     });
+    if (data.skipped) {
+      setStatus(statusWithWarnings("Generate dilewati.", data.warnings));
+      finishProcess("Generate dilewati.");
+      return;
+    }
     if (data.item) state.current = data.item;
     await refreshItems();
     if (data.queued) {

@@ -42,6 +42,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -91,6 +92,8 @@ jobs:
       BANYAKTAU_DAILY_GENERATE_LIMIT: ${{ secrets.BANYAKTAU_DAILY_GENERATE_LIMIT || '3' }}
       BANYAKTAU_PUBLISH_TARGETS: ${{ secrets.BANYAKTAU_PUBLISH_TARGETS || 'auto' }}
       BANYAKTAU_TIME_ZONE: ${{ secrets.BANYAKTAU_TIME_ZONE || 'Asia/Bangkok' }}
+      BANYAKTAU_WORKFLOW_FILE: banyaktau-generate.yml
+      GITHUB_TOKEN: ${{ github.token }}
 
       GRAPH_API_VERSION: ${{ secrets.GRAPH_API_VERSION || 'v25.0' }}
       FACEBOOK_UPLOAD_ENABLED: ${{ secrets.FACEBOOK_UPLOAD_ENABLED || secrets.BANYAKTAU_FACEBOOK_UPLOAD_ENABLED || 'false' }}
