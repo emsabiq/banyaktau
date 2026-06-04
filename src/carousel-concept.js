@@ -302,7 +302,7 @@ function drawContentSlide(ctx, slide, fonts) {
     maxWidth: 970,
     maxLines: titleTotal > 180 ? 5 : 7,
     minFontSize: 38,
-    upper: true
+    upper: false
   });
   const bodyLineHeight = Math.round(body.fontSize * 1.12);
   let bodyY = y + 30;
@@ -488,7 +488,7 @@ function titleFontCandidates() {
 function bodyFontCandidates() {
   return [
     process.env.CAROUSEL_BODY_FONT_FILE,
-    path.join(paths.publicDir, "assets", "fonts", "PlusJakartaSans-Regular.ttf"),
+    path.join(paths.publicDir, "assets", "fonts", "PlusJakartaSans-Bold.ttf"),
     path.join(paths.publicDir, "assets", "fonts", "scholar-italic.otf"),
     "C:/Windows/Fonts/segoeui.ttf",
     "C:/Windows/Fonts/arial.ttf",
