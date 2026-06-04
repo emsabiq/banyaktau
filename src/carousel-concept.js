@@ -302,25 +302,18 @@ function drawContentSlide(ctx, slide, fonts) {
     maxWidth: 970,
     maxLines: titleTotal > 180 ? 5 : 7,
     minFontSize: 38,
-    upper: false
+    upper: true
   });
   const bodyLineHeight = Math.round(body.fontSize * 1.12);
   let bodyY = y + 30;
 
   for (const row of body.rows) {
-    ctx.font = `${body.fontSize}px '${fonts.body}'`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-
-    // Soft drop shadow underneath body text
-    const sh = Math.max(1, Math.round(body.fontSize * 0.03));
-    ctx.fillStyle = "rgba(0,0,0,0.64)";
-    ctx.fillText(row, targetW / 2 + sh, bodyY + sh);
-
-    // Cream text fill (no stroke outline!)
-    ctx.fillStyle = "#fffdf7";
-    ctx.fillText(row, targetW / 2, bodyY);
-
+    drawStrokeFillText(ctx, row, targetW / 2, bodyY, {
+      fontFamily: fonts.body,
+      fontSize: body.fontSize,
+      align: "center",
+      fill: "#fffdf7"
+    });
     bodyY += bodyLineHeight;
   }
 }
@@ -354,8 +347,7 @@ function drawChrome(ctx, { pageText, titleFont }) {
     fontSize: 35,
     align: "center",
     fill: "#ffffff",
-    stroke: "rgba(0,0,0,0.42)",
-    strokeWidth: 2
+    shadowColor: "rgba(0,0,0,0.42)"
   });
 
   drawStrokeFillText(ctx, "BANYAKTAU", targetW - 66, 154, {
@@ -363,44 +355,33 @@ function drawChrome(ctx, { pageText, titleFont }) {
     fontSize: 58,
     align: "right",
     fill: "#ffffff",
-    stroke: "#000000",
-    strokeWidth: 2
+    shadowColor: "rgba(0,0,0,0.65)"
   });
 }
 
 function drawGoldText(ctx, text, x, y, options) {
-  const shadowOffset = Math.max(2, Math.round(options.fontSize * 0.035));
-  ctx.font = `${options.fontSize}px '${options.fontFamily}'`;
-  ctx.textAlign = options.align || "center";
-  ctx.textBaseline = "middle";
-  ctx.fillStyle = "rgba(0,0,0,0.54)";
-  ctx.fillText(text, x + shadowOffset, y + shadowOffset);
-
+  // Plain gold fill with a clean drop shadow
   drawStrokeFillText(ctx, text, x, y, {
     ...options,
-    fill: "#ffd54f",
-    stroke: "#000000",
-    strokeWidth: Math.max(2, Math.round(options.fontSize * 0.03))
+    fill: "#eda51d"
   });
 }
 
 function drawStrokeFillText(ctx, text, x, y, options) {
   const fontSize = Math.round(options.fontSize || 48);
   const fontFamily = options.fontFamily || "sans-serif";
-  const strokeWidth = Math.max(1, Math.round(options.strokeWidth || 3));
   ctx.font = `${fontSize}px '${fontFamily}'`;
   ctx.textAlign = options.align || "center";
   ctx.textBaseline = "middle";
 
-  ctx.fillStyle = options.stroke || "#000000";
-  for (let dx = -strokeWidth; dx <= strokeWidth; dx += 1) {
-    for (let dy = -strokeWidth; dy <= strokeWidth; dy += 1) {
-      if (dx === 0 && dy === 0) continue;
-      if ((dx * dx) + (dy * dy) > strokeWidth * strokeWidth) continue;
-      ctx.fillText(text, x + dx, y + dy);
-    }
+  // Draw drop shadow instead of heavy outline stroke to avoid character distortion
+  if (options.shadow !== false) {
+    const shadowOffset = options.shadowOffset || Math.max(1, Math.round(fontSize * 0.035));
+    ctx.fillStyle = options.shadowColor || "rgba(0, 0, 0, 0.65)";
+    ctx.fillText(text, x + shadowOffset, y + shadowOffset);
   }
 
+  // Plain fill (no stroke/outline)
   ctx.fillStyle = options.fill || "#ffffff";
   ctx.fillText(text, x, y);
 }
