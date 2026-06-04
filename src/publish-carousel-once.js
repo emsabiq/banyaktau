@@ -128,7 +128,7 @@ async function fetchRemoteItems(url) {
   const target = new URL(url);
   target.searchParams.set("v", String(Date.now()));
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
+  const timeout = setTimeout(() => controller.abort(), 4000); // fail fast (4s) to avoid long hangs on unreachable remotes
   try {
     const response = await fetch(target, {
       cache: "no-store",
