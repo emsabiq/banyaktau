@@ -297,7 +297,10 @@ async function main() {
     console.log(JSON.stringify({ status: "skipped", reason: "no_enabled_carousel_targets", targetMode }, null, 2));
     return;
   }
-  if (!force && await dailyCarouselLimitReached()) {
+  // Batasan harian hanya berlaku untuk run otomatis (schedule/cron).
+  // Jika dijalankan manual (workflow_dispatch atau lokal), batas harian dilewati secara default.
+  const isAutomated = process.env.GITHUB_ACTIONS === "true" && process.env.GITHUB_EVENT_NAME === "schedule";
+  if (isAutomated && !force && await dailyCarouselLimitReached()) {
     console.log(JSON.stringify({ status: "skipped", reason: "daily_carousel_limit_reached", targetMode, targets }, null, 2));
     return;
   }
