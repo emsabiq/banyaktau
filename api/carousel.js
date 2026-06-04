@@ -18,16 +18,12 @@ export default async function handler(req, res) {
 
   try {
     const body = await readBody(req);
-    const [activeGenerateRun, activeCarouselRun] = await Promise.all([
-      getActiveWorkflowRun(),
-      getActiveWorkflowRun({ workflow: carouselWorkflow })
-    ]);
-    const activeRun = activeGenerateRun || activeCarouselRun;
+    const activeRun = await getActiveWorkflowRun({ workflow: carouselWorkflow });
     if (activeRun) {
       sendJson(res, 200, {
         queued: true,
         skipped: true,
-        warnings: ["Masih ada workflow berjalan, jadi carousel baru tidak dikirim agar tidak posting dobel."],
+        warnings: ["Masih ada workflow carousel berjalan, jadi carousel baru tidak dikirim agar tidak posting dobel."],
         dispatch: {
           ok: true,
           skipped: true,
@@ -55,7 +51,9 @@ export default async function handler(req, res) {
       target: clean(body.target || "all"),
       item_id: clean(body.itemId || ""),
       force: force ? "true" : "false",
-      regenerate: clean(body.regenerate || "false").toLowerCase() === "true" ? "true" : "false"
+      regenerate: clean(body.regenerate || "false").toLowerCase() === "true" ? "true" : "false",
+      topic: clean(body.topic || ""),
+      category: clean(body.category || "random")
     }, { workflow: carouselWorkflow });
 
     sendJson(res, 200, {

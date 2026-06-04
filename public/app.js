@@ -333,15 +333,18 @@ async function generateCarousel() {
     showWorkspaceTab("console");
     return;
   }
+  const form = new FormData(els.form);
   startProcess("Publish carousel otomatis");
   setLocalStage("workflow", "Mengirim pekerjaan carousel ke GitHub Actions...");
-  setBusy(true, "Membuat/publish carousel dari item terbaru...");
+  setBusy(true, "Membuat/publish carousel dari item terbaru atau ide baru...");
   try {
     const data = await api("/api/carousel", {
       method: "POST",
       body: JSON.stringify({
         target: "all",
         itemId: state.current?.id || "",
+        topic: form.get("topic") || "",
+        category: form.get("category") || "random",
         force: "false",
         regenerate: "false"
       })
@@ -1085,7 +1088,7 @@ function renderButtons() {
   if (els.ideaBtn) els.ideaBtn.disabled = state.busy;
   if (els.preflightBtn) els.preflightBtn.disabled = state.busy;
   els.fullBtn.disabled = generateLocked;
-  if (els.carouselBtn) els.carouselBtn.disabled = generateLocked || !hasItem;
+  if (els.carouselBtn) els.carouselBtn.disabled = generateLocked;
   if (els.draftBtn) els.draftBtn.disabled = state.busy;
   els.settingsBtn.disabled = state.busy;
   if (els.imageBtn) els.imageBtn.disabled = state.busy || !hasItem;

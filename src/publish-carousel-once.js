@@ -2,8 +2,11 @@ import { config, ensureProjectDirs } from "./config.js";
 import { ensureCarousel } from "./pipeline.js";
 import { absolutizeGeneratedUrls, publicBaseUrl, remoteEnabled, uploadGeneratedStateAndAssets } from "./remote.js";
 import { publishCarouselToFacebook, publishCarouselToInstagram } from "./facebook.js";
-import { getItem, listItems, mergeMemoryItems, saveItem } from "./storage.js";
+import { getItem, listContextItems, listItems, mergeMemoryItems, saveItem } from "./storage.js";
+import { createIdeaRecommendations, createKnowledgeDraft, selectMostNovelIdea } from "./story-engine.js";
 import { publishCarouselToTikTok } from "./tiktok.js";
+
+const fallbackPublicBaseUrl = "https://emsa.pro/banyaktau";
 
 function argValue(name, fallback = "") {
   const index = process.argv.indexOf(name);
@@ -18,6 +21,10 @@ function boolArg(name, fallback = false) {
 
 function clean(value) {
   return String(value || "").trim();
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function carouselImageUrls(item) {
@@ -64,21 +71,61 @@ function cleanCaptionLine(value) {
 }
 
 async function importRemoteItems() {
-  const base = publicBaseUrl();
-  if (!base) return 0;
-  try {
-    const response = await fetch(`${base}/state/items.json?v=${Date.now()}`, { cache: "no-store" });
-    if (!response.ok) return 0;
-    const items = await response.json();
-    if (!Array.isArray(items)) return 0;
-    for (const item of items) {
-      if (item?.id) await saveItem(item);
+  const urls = remoteStateUrlCandidates();
+  let lastError = "";
+  for (const url of urls) {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        const items = await fetchRemoteItems(url);
+        for (const item of items) {
+          if (item?.id) await saveItem(item);
+        }
+        await mergeMemoryItems(items);
+        console.log(`Remote state carousel terbaca: ${items.length} item.`);
+        return items.length;
+      } catch (error) {
+        lastError = `${url}: ${error.message}`;
+        if (attempt < 3) await sleep(attempt * 1500);
+      }
     }
-    await mergeMemoryItems(items);
-    return items.length;
-  } catch (error) {
-    console.warn(`Remote state carousel tidak bisa dibaca: ${error.message}`);
-    return 0;
+  }
+  if (lastError) console.warn(`Remote state carousel tidak bisa dibaca: ${lastError}`);
+  return 0;
+}
+
+function remoteStateUrlCandidates() {
+  const direct = clean(process.env.BANYAKTAU_REMOTE_STATE_URL || process.env.PUBLIC_STATE_URL);
+  const bases = [
+    publicBaseUrl(),
+    config.publicBaseUrl,
+    fallbackPublicBaseUrl
+  ].map((base) => clean(base).replace(/\/+$/g, "")).filter(Boolean);
+
+  const urls = [
+    direct,
+    ...bases.map((base) => `${base}/state/items.json`)
+  ].filter(Boolean);
+
+  return [...new Set(urls)];
+}
+
+async function fetchRemoteItems(url) {
+  const target = new URL(url);
+  target.searchParams.set("v", String(Date.now()));
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch(target, {
+      cache: "no-store",
+      signal: controller.signal,
+      headers: { "User-Agent": "banyaktau-carousel-runner" }
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const items = await response.json();
+    if (!Array.isArray(items)) throw new Error("payload bukan array");
+    return items;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -93,6 +140,33 @@ async function pickItem() {
   const items = await listItems();
   const item = items.find((entry) => entry?.plan?.scenes?.length || entry?.assets?.carousels?.length);
   if (!item) throw new Error("Belum ada item yang bisa dipakai untuk carousel.");
+  return item;
+}
+
+async function createCarouselOnlyItem(warnings) {
+  const existingItems = await listContextItems();
+  const seed = clean(argValue("--topic", process.env.BANYAKTAU_TOPIC || ""));
+  const category = clean(argValue("--category", process.env.BANYAKTAU_CATEGORY || "random")) || "random";
+  const durationSec = Math.max(45, Number(argValue("--duration", process.env.BANYAKTAU_DURATION || "90")) || 90);
+  const sceneCount = Math.max(5, Number(argValue("--scenes", process.env.BANYAKTAU_SCENES || "7")) || 7);
+  const imageQuality = clean(argValue("--image-quality", process.env.IMAGE_QUALITY || config.openai.imageQuality));
+  const imageSize = clean(argValue("--image-size", process.env.IMAGE_SIZE || config.openai.imageSize));
+  const ideas = await createIdeaRecommendations({ seed, category, durationSec }, { existingItems });
+  const selectedIdea = selectMostNovelIdea(ideas.ideas || [], existingItems);
+  const item = await createKnowledgeDraft({
+    topic: selectedIdea?.topic || seed || "fakta unik yang jarang dibahas",
+    category: selectedIdea?.category || category,
+    selectedIdea,
+    durationSec,
+    sceneCount,
+    ttsProvider: "openai",
+    imageQuality,
+    imageSize
+  }, { existingItems });
+
+  await saveItem(item);
+  await mergeMemoryItems([item]);
+  warnings.push("Carousel dibuat dari ide baru karena runner tidak menemukan item siap pakai.");
   return item;
 }
 
@@ -126,19 +200,55 @@ async function publishTarget(target, options) {
 async function dailyCarouselLimitReached() {
   const limit = Math.max(0, Number(process.env.BANYAKTAU_DAILY_CAROUSEL_LIMIT || "1") || 0);
   if (!limit) return false;
-  const items = await listItems();
+  const [items, workflowCount] = await Promise.all([
+    listItems(),
+    countSuccessfulWorkflowRunsToday()
+  ]);
   const today = localDayKey(new Date());
-  const count = items.filter((item) => {
+  const stateCount = items.filter((item) => {
     const carousel = item?.publish?.carousel || {};
     return Object.values(carousel).some((entry) => {
       const publishedAt = entry?.publishedAt;
       return publishedAt && localDayKey(new Date(publishedAt)) === today;
     });
   }).length;
+  const count = Math.max(stateCount, workflowCount);
   if (count >= limit) {
-    console.log(`Daily carousel limit reached: ${count}/${limit} for ${today}.`);
+    console.log(`Daily carousel limit reached: ${count}/${limit} for ${today} (state=${stateCount}, workflow=${workflowCount}).`);
   }
   return count >= limit;
+}
+
+async function countSuccessfulWorkflowRunsToday() {
+  const token = process.env.GITHUB_TOKEN || "";
+  const repo = process.env.GITHUB_REPOSITORY || "";
+  const workflow = process.env.BANYAKTAU_CAROUSEL_WORKFLOW_FILE || "banyaktau-publish-carousel.yml";
+  if (!token || !repo) return 0;
+  try {
+    const url = new URL(`https://api.github.com/repos/${repo}/actions/workflows/${encodeURIComponent(workflow)}/runs`);
+    url.searchParams.set("per_page", "50");
+    url.searchParams.set("status", "success");
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "banyaktau-carousel-runner"
+      },
+      cache: "no-store"
+    });
+    if (!response.ok) return 0;
+    const data = await response.json();
+    const today = localDayKey(new Date());
+    return (data.workflow_runs || []).filter((run) => (
+      run.conclusion === "success"
+      && ["schedule", "workflow_dispatch"].includes(run.event)
+      && localDayKey(new Date(run.created_at)) === today
+    )).length;
+  } catch (error) {
+    console.warn(`Hitung run carousel harian gagal: ${error.message}`);
+    return 0;
+  }
 }
 
 function localDayKey(date) {
@@ -177,7 +287,13 @@ async function main() {
     return;
   }
 
-  const item = await pickItem();
+  let item;
+  try {
+    item = await pickItem();
+  } catch (error) {
+    warnings.push(error.message);
+    item = await createCarouselOnlyItem(warnings);
+  }
   if (regenerate || !hasUsablePublicCarousel(item)) {
     await ensureCarousel(item, { warnings, strict: true });
   }

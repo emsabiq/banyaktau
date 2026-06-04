@@ -105,6 +105,12 @@ export async function getDailyCarouselLimitStatus(items = []) {
   const limit = Math.max(0, Number(process.env.BANYAKTAU_DAILY_CAROUSEL_LIMIT || "1") || 0);
   if (!limit) return { limit, count: 0, reached: false, dateKey: localDayKey(new Date()) };
   const dateKey = localDayKey(new Date());
+  const runs = await getRecentWorkflowRuns(50, { workflow: "banyaktau-publish-carousel.yml" });
+  const workflowCount = runs.filter((run) => (
+    run.conclusion === "success"
+    && ["schedule", "workflow_dispatch"].includes(run.event)
+    && localDayKey(new Date(run.created_at)) === dateKey
+  )).length;
   const stateCount = (items || []).filter((item) => {
     const carousel = item?.publish?.carousel || {};
     return Object.values(carousel).some((entry) => {
@@ -112,7 +118,8 @@ export async function getDailyCarouselLimitStatus(items = []) {
       return publishedAt && localDayKey(new Date(publishedAt)) === dateKey;
     });
   }).length;
-  return { limit, count: stateCount, reached: stateCount >= limit, dateKey };
+  const count = Math.max(stateCount, workflowCount);
+  return { limit, count, stateCount, workflowCount, reached: count >= limit, dateKey };
 }
 
 export async function getDailyWorkflowLimitStatus() {

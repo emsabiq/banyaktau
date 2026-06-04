@@ -19,6 +19,14 @@ name: BanyakTau Publish Carousel
         description: "Regenerate carousel images before publishing"
         required: false
         default: "false"
+      topic:
+        description: "Optional topic seed when no existing item is available"
+        required: false
+        default: ""
+      category:
+        description: "Category when creating a carousel-only item"
+        required: false
+        default: "random"
   schedule:
     - cron: "45 2 * * *"
 
@@ -36,29 +44,31 @@ jobs:
     timeout-minutes: 60
     env:
       PUBLIC_BASE_URL: ${{ secrets.PUBLIC_BASE_URL }}
-      UPLOAD_DRIVER: ${{ secrets.UPLOAD_DRIVER }}
+      UPLOAD_DRIVER: ${{ secrets.UPLOAD_DRIVER || 'auto' }}
       SFTP_HOST: ${{ secrets.SFTP_HOST }}
-      SFTP_PORT: ${{ secrets.SFTP_PORT }}
+      SFTP_PORT: ${{ secrets.SFTP_PORT || '22' }}
       SFTP_USER: ${{ secrets.SFTP_USER }}
       SFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
       SFTP_REMOTE_DIR: ${{ secrets.SFTP_REMOTE_DIR }}
-      SFTP_UPLOAD_TIMEOUT_SECONDS: ${{ secrets.SFTP_UPLOAD_TIMEOUT_SECONDS }}
+      SFTP_UPLOAD_TIMEOUT_SECONDS: ${{ secrets.SFTP_UPLOAD_TIMEOUT_SECONDS || '180' }}
       FTP_HOST: ${{ secrets.FTP_HOST }}
-      FTP_PORT: ${{ secrets.FTP_PORT }}
+      FTP_PORT: ${{ secrets.FTP_PORT || '21' }}
       FTP_USER: ${{ secrets.FTP_USER }}
       FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
       FTP_REMOTE_DIR: ${{ secrets.FTP_REMOTE_DIR }}
-      FTP_UPLOAD_TIMEOUT_SECONDS: ${{ secrets.FTP_UPLOAD_TIMEOUT_SECONDS }}
+      FTP_UPLOAD_TIMEOUT_SECONDS: ${{ secrets.FTP_UPLOAD_TIMEOUT_SECONDS || '180' }}
 
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
-      STORY_MODEL: ${{ secrets.STORY_MODEL }}
-      IMAGE_MODEL: ${{ secrets.IMAGE_MODEL }}
-      IMAGE_SIZE: ${{ secrets.IMAGE_SIZE }}
-      IMAGE_QUALITY: ${{ secrets.IMAGE_QUALITY }}
+      OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL || 'https://api.openai.com/v1' }}
+      STORY_MODEL: ${{ secrets.STORY_MODEL || 'gpt-4.1-mini' }}
+      IMAGE_MODEL: ${{ secrets.IMAGE_MODEL || 'gpt-image-1-mini' }}
+      IMAGE_SIZE: ${{ secrets.IMAGE_SIZE || '1024x1536' }}
+      IMAGE_QUALITY: ${{ secrets.IMAGE_QUALITY || 'low' }}
 
-      BANYAKTAU_DAILY_CAROUSEL_LIMIT: ${{ secrets.BANYAKTAU_DAILY_CAROUSEL_LIMIT }}
-      BANYAKTAU_TIME_ZONE: ${{ secrets.BANYAKTAU_TIME_ZONE }}
+      BANYAKTAU_DAILY_CAROUSEL_LIMIT: ${{ secrets.BANYAKTAU_DAILY_CAROUSEL_LIMIT || '1' }}
+      BANYAKTAU_TIME_ZONE: ${{ secrets.BANYAKTAU_TIME_ZONE || 'Asia/Bangkok' }}
+      BANYAKTAU_CAROUSEL_WORKFLOW_FILE: banyaktau-publish-carousel.yml
+      GITHUB_TOKEN: ${{ github.token }}
 
       GRAPH_API_VERSION: ${{ secrets.GRAPH_API_VERSION }}
       FACEBOOK_UPLOAD_ENABLED: ${{ secrets.FACEBOOK_UPLOAD_ENABLED }}
@@ -121,9 +131,13 @@ jobs:
           INPUT_ITEM_ID: ${{ github.event.inputs.item_id }}
           INPUT_FORCE: ${{ github.event.inputs.force }}
           INPUT_REGENERATE: ${{ github.event.inputs.regenerate }}
+          INPUT_TOPIC: ${{ github.event.inputs.topic }}
+          INPUT_CATEGORY: ${{ github.event.inputs.category }}
         run: |
           npm run carousel:publish -- \
             --target "${INPUT_TARGET:-all}" \
             --id "${INPUT_ITEM_ID:-}" \
             --force "${INPUT_FORCE:-false}" \
-            --regenerate "${INPUT_REGENERATE:-false}"
+            --regenerate "${INPUT_REGENERATE:-false}" \
+            --topic "${INPUT_TOPIC:-}" \
+            --category "${INPUT_CATEGORY:-random}"
