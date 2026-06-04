@@ -17,7 +17,7 @@ export default async function handler(req, res) {
     const [itemsRaw, videoRuns, carouselRuns] = await Promise.all([
       readRemoteItems(),
       getRecentWorkflowRuns(5),
-      getRecentWorkflowRuns(5, { workflow: "banyaktau-carousel.yml" })
+      getRecentWorkflowRuns(5, { workflow: "banyaktau-publish-carousel.yml" })
     ]);
     const recentRuns = [...videoRuns, ...carouselRuns]
       .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))

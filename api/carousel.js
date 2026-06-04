@@ -10,7 +10,7 @@ import {
   sendJson
 } from "./_utils.js";
 
-const carouselWorkflow = "banyaktau-carousel.yml";
+const carouselWorkflow = "banyaktau-publish-carousel.yml";
 
 export default async function handler(req, res) {
   if (!methodAllowed(req, res, ["POST"])) return;
