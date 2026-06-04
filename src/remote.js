@@ -64,13 +64,20 @@ export async function uploadGeneratedStateAndAssets(options = {}) {
 }
 
 export function absolutizeGeneratedUrls(item) {
-  const base = publicBaseUrl();
-  if (!base || !item) return item;
+  const base = publicBaseUrl() || "https://www.emsa.pro/banyaktau";
+  if (!item) return item;
   const withUrl = (asset) => {
     if (!asset?.url) return asset;
     const url = String(asset.url);
-    if (/^https?:\/\//i.test(url)) return asset;
-    return { ...asset, url: `${base}${url.replace(/^\/generated\//, "/")}` };
+    const filename = url.substring(url.lastIndexOf("/") + 1);
+    let typeDir = "images";
+    if (url.includes("/carousels/")) typeDir = "carousels";
+    else if (url.includes("/videos/")) typeDir = "videos";
+    else if (url.includes("/thumbnails/")) typeDir = "thumbnails";
+    else if (url.includes("/audio/")) typeDir = "audio";
+    else if (url.includes("/clips/")) typeDir = "clips";
+    
+    return { ...asset, url: `${base}/${typeDir}/${filename}` };
   };
   return {
     ...item,
