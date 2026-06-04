@@ -1,6 +1,6 @@
 name: BanyakTau Publish Carousel
 
-on:
+"on":
   workflow_dispatch:
     inputs:
       target:
