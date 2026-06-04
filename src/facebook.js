@@ -256,6 +256,7 @@ async function createInstagramReelContainer({ token, igUserId, videoUrl, caption
 async function createInstagramCarouselImageContainer({ token, igUserId, imageUrl }) {
   const body = new URLSearchParams({
     access_token: token,
+    media_type: "IMAGE",
     image_url: imageUrl,
     is_carousel_item: "true"
   });

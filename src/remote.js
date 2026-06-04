@@ -126,6 +126,7 @@ async function uploadItemAssets(client, item) {
   ].filter((asset) => asset?.path && asset?.url);
 
   for (const asset of assets) {
+    if (!(await fileExists(asset.path))) continue;
     const remotePath = remotePathFromAssetUrl(asset.url);
     if (!remotePath || remotePath.startsWith("http")) continue;
     await client.ensureDir(path.posix.dirname(remotePath));

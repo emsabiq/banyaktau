@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import { config, ensureProjectDirs } from "./config.js";
 import { ensureCarousel } from "./pipeline.js";
 import { absolutizeGeneratedUrls, publicBaseUrl, remoteEnabled, uploadGeneratedStateAndAssets } from "./remote.js";
@@ -47,6 +48,20 @@ function publicCarouselUrls(item) {
 
 function hasUsablePublicCarousel(item) {
   return publicCarouselUrls(item).length >= 2;
+}
+
+async function hasLocalCarouselFiles(item) {
+  const assets = item.assets?.carousels || [];
+  for (const asset of assets) {
+    if (!asset?.path) continue;
+    try {
+      await fs.access(asset.path);
+      return true;
+    } catch {
+      // Missing old local path from remote state; public URL may still be valid.
+    }
+  }
+  return false;
 }
 
 function socialDescription(item) {
@@ -300,7 +315,8 @@ async function main() {
 
   let publishItem = absolutizeGeneratedUrls(item);
   let remoteReady = hasUsablePublicCarousel(publishItem);
-  if (remoteEnabled() && (regenerate || !remoteReady)) {
+  const needsCarouselUpload = await hasLocalCarouselFiles(item);
+  if (remoteEnabled() && (regenerate || needsCarouselUpload || !remoteReady)) {
     try {
       await saveItem(publishItem);
       await mergeMemoryItems([publishItem]);
