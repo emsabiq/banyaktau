@@ -35,17 +35,8 @@ export default async function handler(req, res) {
     }
 
     const items = await readRemoteItems();
-    const force = clean(body.force || "false").toLowerCase() === "true";
+    const force = true; // Manual UI trigger is always allowed
     const daily = await getDailyCarouselLimitStatus(items);
-    if (!force && daily.reached) {
-      sendJson(res, 200, {
-        queued: false,
-        skipped: true,
-        warnings: [`Batas carousel harian sudah tercapai (${daily.count}/${daily.limit}) untuk ${daily.dateKey}.`],
-        daily
-      });
-      return;
-    }
 
     const dispatch = await dispatchWorkflow({
       target: clean(body.target || "all"),

@@ -22,16 +22,7 @@ export default async function handler(req, res) {
       return;
     }
     const daily = await getDailyWorkflowLimitStatus();
-    if (daily.reached) {
-      sendJson(res, 200, {
-        queued: false,
-        skipped: true,
-        item: null,
-        warnings: [`Batas generate harian sudah tercapai (${daily.count}/${daily.limit}) untuk ${daily.dateKey}.`],
-        daily
-      });
-      return;
-    }
+    // Manual UI trigger is always allowed
     const dispatch = await dispatchWorkflow({
       topic: clean(body.topic || body.selectedIdea?.topic || ""),
       category: clean(body.category || body.selectedIdea?.category || "random"),
