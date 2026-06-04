@@ -68,7 +68,9 @@ export function absolutizeGeneratedUrls(item) {
   if (!base || !item) return item;
   const withUrl = (asset) => {
     if (!asset?.url) return asset;
-    return { ...asset, url: `${base}${String(asset.url).replace(/^\/generated\//, "/")}` };
+    const url = String(asset.url);
+    if (/^https?:\/\//i.test(url)) return asset;
+    return { ...asset, url: `${base}${url.replace(/^\/generated\//, "/")}` };
   };
   return {
     ...item,

@@ -64,12 +64,12 @@ export function normalizeRemoteItemUrls(items) {
   }));
 }
 
-export async function dispatchWorkflow(inputs) {
+export async function dispatchWorkflow(inputs, options = {}) {
   const token = githubToken();
   if (!token) throw new Error("GH_REPO_SECRET_TOKEN belum diset di Vercel Environment.");
   const repo = githubRepo();
   if (!repo) throw new Error("DASHBOARD_GITHUB_REPO belum diset di Vercel Environment.");
-  const workflow = clean(process.env.DASHBOARD_WORKFLOW_FILE || "banyaktau-generate.yml");
+  const workflow = clean(options.workflow || process.env.DASHBOARD_WORKFLOW_FILE || "banyaktau-generate.yml");
   const ref = clean(process.env.DASHBOARD_GITHUB_REF || "main");
   const response = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`, {
     method: "POST",
@@ -81,12 +81,12 @@ export async function dispatchWorkflow(inputs) {
   throw new Error(`Gagal trigger workflow (${response.status}): ${detail.slice(0, 500)}`);
 }
 
-export async function getRecentWorkflowRuns(limit = 5) {
+export async function getRecentWorkflowRuns(limit = 5, options = {}) {
   const token = githubToken();
   if (!token) return [];
   const repo = githubRepo();
   if (!repo) return [];
-  const workflow = clean(process.env.DASHBOARD_WORKFLOW_FILE || "banyaktau-generate.yml");
+  const workflow = clean(options.workflow || process.env.DASHBOARD_WORKFLOW_FILE || "banyaktau-generate.yml");
   const response = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/${encodeURIComponent(workflow)}/runs?per_page=${limit}`, {
     headers: githubHeaders(token),
     cache: "no-store"
@@ -96,9 +96,23 @@ export async function getRecentWorkflowRuns(limit = 5) {
   return (data.workflow_runs || []).map(mapWorkflowRun);
 }
 
-export async function getActiveWorkflowRun() {
-  const runs = await getRecentWorkflowRuns(10);
+export async function getActiveWorkflowRun(options = {}) {
+  const runs = await getRecentWorkflowRuns(10, options);
   return runs.find((run) => ["queued", "in_progress", "waiting", "requested"].includes(run.status)) || null;
+}
+
+export async function getDailyCarouselLimitStatus(items = []) {
+  const limit = Math.max(0, Number(process.env.BANYAKTAU_DAILY_CAROUSEL_LIMIT || "1") || 0);
+  if (!limit) return { limit, count: 0, reached: false, dateKey: localDayKey(new Date()) };
+  const dateKey = localDayKey(new Date());
+  const stateCount = (items || []).filter((item) => {
+    const carousel = item?.publish?.carousel || {};
+    return Object.values(carousel).some((entry) => {
+      const publishedAt = entry?.publishedAt;
+      return publishedAt && localDayKey(new Date(publishedAt)) === dateKey;
+    });
+  }).length;
+  return { limit, count: stateCount, reached: stateCount >= limit, dateKey };
 }
 
 export async function getDailyWorkflowLimitStatus() {

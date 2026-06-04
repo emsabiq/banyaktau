@@ -14,10 +14,14 @@ export default async function handler(req, res) {
   if (!requireAuth(req, res)) return;
 
   try {
-    const [itemsRaw, recentRuns] = await Promise.all([
+    const [itemsRaw, videoRuns, carouselRuns] = await Promise.all([
       readRemoteItems(),
-      getRecentWorkflowRuns(5)
+      getRecentWorkflowRuns(5),
+      getRecentWorkflowRuns(5, { workflow: "banyaktau-carousel.yml" })
     ]);
+    const recentRuns = [...videoRuns, ...carouselRuns]
+      .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))
+      .slice(0, 5);
     const items = normalizeRemoteItemUrls(itemsRaw)
       .sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)));
     const latestRun = recentRuns[0] || null;

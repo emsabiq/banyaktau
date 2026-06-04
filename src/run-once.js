@@ -35,6 +35,7 @@ const carouselPublishTargetsArg = argValue("--carousel-publish-targets", "");
 if (carouselPublishTargetsArg) process.env.BANYAKTAU_CAROUSEL_PUBLISH_TARGETS = carouselPublishTargetsArg;
 const withClip = false;
 const dailyGenerateLimit = Math.max(0, Number(process.env.BANYAKTAU_DAILY_GENERATE_LIMIT || "3") || 0);
+const dailyCarouselLimit = Math.max(0, Number(process.env.BANYAKTAU_DAILY_CAROUSEL_LIMIT || "1") || 0);
 
 console.log("BanyakTau run started.");
 console.log(`Category=${input.category}, duration=${input.durationSec}, scenes=${input.sceneCount}, withClip=${withClip}`);
@@ -218,6 +219,10 @@ async function publishSocialsIfEnabled(result, options = {}) {
 async function publishCarouselIfEnabled(result, options = {}) {
   const requestedTargets = resolveCarouselPublishTargets();
   if (!requestedTargets.length) return;
+  if (!options.force && await dailyCarouselLimitReached()) {
+    result.warnings.push(`Carousel publish dilewati: batas harian carousel tercapai (${dailyCarouselLimit}/hari).`);
+    return;
+  }
   const localFilesOnly = Boolean(options.localFilesOnly);
   const targets = localFilesOnly ? requestedTargets.filter((target) => target === "facebook") : requestedTargets;
   if (localFilesOnly) {
@@ -333,6 +338,27 @@ async function dailyGenerationLimitReached() {
     console.log(`Daily generate limit reached: ${count}/${dailyGenerateLimit} for ${today} (state=${stateCount}, workflow=${workflowCount}).`);
   }
   return count >= dailyGenerateLimit;
+}
+
+async function dailyCarouselLimitReached() {
+  if (!dailyCarouselLimit) return false;
+  const [items, workflowCount] = await Promise.all([
+    mergeKnownItems(),
+    countSuccessfulWorkflowRunsToday()
+  ]);
+  const today = localDayKey(new Date());
+  const stateCount = items.filter((item) => {
+    const carousel = item?.publish?.carousel || {};
+    return Object.values(carousel).some((entry) => {
+      const publishedAt = entry?.publishedAt;
+      return publishedAt && localDayKey(new Date(publishedAt)) === today;
+    });
+  }).length;
+  const count = Math.max(stateCount, workflowCount);
+  if (count >= dailyCarouselLimit) {
+    console.log(`Daily carousel limit reached: ${count}/${dailyCarouselLimit} for ${today} (state=${stateCount}, workflow=${workflowCount}).`);
+  }
+  return count >= dailyCarouselLimit;
 }
 
 async function countSuccessfulWorkflowRunsToday() {
@@ -500,7 +526,7 @@ function socialDescription(item) {
     points ? `Intinya:\n${points}` : "",
     question,
     "Simpan dulu biar tidak lupa, dan kirim ke teman yang suka fakta unik.",
-    "#BanyakTau #FaktaMenarik #TahukahKamu #Pengetahuan #Sains #Sejarah #EdukasiRingan #ReelsIndonesia"
+    "#BanyakTau #FaktaMenarik #Pengetahuan"
   ].filter(Boolean).join("\n\n");
 }
 

@@ -44,6 +44,7 @@ const els = {
   settingsForm: document.querySelector("#settingsForm"),
   ideaBtn: document.querySelector("#ideaBtn"),
   fullBtn: document.querySelector("#fullBtn"),
+  carouselBtn: document.querySelector("#carouselBtn"),
   draftBtn: document.querySelector("#draftBtn"),
   settingsBtn: document.querySelector("#settingsBtn"),
   preflightBtn: document.querySelector("#preflightBtn"),
@@ -166,6 +167,7 @@ function bindEvents() {
     renderGallery();
   });
   els.ideaBtn?.addEventListener("click", generateIdeas);
+  els.carouselBtn?.addEventListener("click", generateCarousel);
   els.draftBtn?.addEventListener("click", generateDraft);
   els.preflightBtn?.addEventListener("click", runPreflight);
   els.imageBtn?.addEventListener("click", generateImages);
@@ -319,6 +321,43 @@ async function generateFull() {
   } catch (error) {
     handleApiError(error);
     finishProcess("Generate gagal.");
+  } finally {
+    setBusy(false);
+    render();
+  }
+}
+
+async function generateCarousel() {
+  if (state.busy || hasRunningWorkflow() || state.pollTimer) {
+    setStatus("Workflow sebelumnya masih berjalan. Pantau tab Console agar tidak posting dobel.");
+    showWorkspaceTab("console");
+    return;
+  }
+  startProcess("Publish carousel otomatis");
+  setLocalStage("workflow", "Mengirim pekerjaan carousel ke GitHub Actions...");
+  setBusy(true, "Membuat/publish carousel dari item terbaru...");
+  try {
+    const data = await api("/api/carousel", {
+      method: "POST",
+      body: JSON.stringify({
+        target: "all",
+        itemId: state.current?.id || "",
+        force: "false",
+        regenerate: "false"
+      })
+    });
+    if (data.skipped) {
+      setStatus(statusWithWarnings("Carousel dilewati.", data.warnings));
+      finishProcess("Carousel dilewati.");
+      return;
+    }
+    setLocalStage("workflow", "Workflow carousel berjalan. Progress live dibaca dari GitHub Actions...");
+    setStatus(statusWithWarnings("Workflow carousel dimulai.", data.warnings));
+    showWorkspaceTab("console");
+    await refreshItems().catch(() => {});
+  } catch (error) {
+    handleApiError(error);
+    finishProcess("Carousel gagal.");
   } finally {
     setBusy(false);
     render();
@@ -1048,6 +1087,7 @@ function renderButtons() {
   if (els.ideaBtn) els.ideaBtn.disabled = state.busy;
   if (els.preflightBtn) els.preflightBtn.disabled = state.busy;
   els.fullBtn.disabled = generateLocked;
+  if (els.carouselBtn) els.carouselBtn.disabled = generateLocked || !hasItem;
   if (els.draftBtn) els.draftBtn.disabled = state.busy;
   els.settingsBtn.disabled = state.busy;
   if (els.imageBtn) els.imageBtn.disabled = state.busy || !hasItem;
