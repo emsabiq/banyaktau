@@ -44,7 +44,10 @@ if (remoteEnabled()) {
   await importRemoteState();
 }
 
-if (!boolValue(process.env.BANYAKTAU_FORCE_GENERATE, false) && await dailyGenerationLimitReached()) {
+const isAutomated = process.env.GITHUB_ACTIONS === "true" && process.env.GITHUB_EVENT_NAME === "schedule";
+const force = boolValue(argValue("--force", process.env.BANYAKTAU_FORCE_GENERATE || "false")) || !isAutomated;
+
+if (!force && await dailyGenerationLimitReached()) {
   console.log(JSON.stringify({
     status: "skipped",
     reason: `Batas generate harian tercapai (${dailyGenerateLimit}/hari).`,
