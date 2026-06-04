@@ -44,7 +44,7 @@ export default async function handler(req, res) {
     sendJson(res, 200, {
       queued: true,
       item: null,
-      warnings: ["Workflow GitHub Actions sudah dipicu dalam mode hemat gambar + TTS. Refresh galeri beberapa menit lagi untuk melihat video final."],
+      warnings: ["Workflow video GitHub Actions sudah dipicu dalam mode hemat gambar + TTS. Refresh galeri beberapa menit lagi untuk melihat video final."],
       dispatch
     });
   } catch (error) {

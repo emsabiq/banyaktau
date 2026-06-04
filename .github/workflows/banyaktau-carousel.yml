@@ -6,7 +6,7 @@ on:
       target:
         description: Carousel target: all, instagram, facebook, tiktok, or comma list
         required: false
-        default: all
+        default: "all"
       item_id:
         description: Optional item id. Empty uses latest item.
         required: false
@@ -19,6 +19,9 @@ on:
         description: Regenerate carousel images before publishing
         required: false
         default: "false"
+  schedule:
+    # GitHub cron uses UTC. Runs once at 09:45 WIB/Asia-Bangkok, after the first video schedule.
+    - cron: "45 2 * * *"
 
 concurrency:
   group: banyaktau-carousel

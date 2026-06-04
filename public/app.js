@@ -307,13 +307,13 @@ async function generateFull() {
     await refreshItems();
     if (data.queued) {
       setLocalStage("workflow", "Workflow berjalan. Progress live dibaca dari GitHub Actions...");
-      setStatus(statusWithWarnings("Workflow GitHub Actions dimulai. Mode hemat: gambar + TTS + carousel tanpa clip video AI.", data.warnings));
+      setStatus(statusWithWarnings("Workflow video GitHub Actions dimulai. Mode hemat: gambar + TTS tanpa clip video AI.", data.warnings));
       showWorkspaceTab("console");
       await refreshItems().catch(() => {});
       startResultPolling(previousLatestId);
     } else {
       setStatus(statusWithWarnings(
-        "Video final dan carousel selesai dibuat dari gambar + TTS tanpa clip video AI.",
+        "Video final selesai dibuat dari gambar + TTS tanpa clip video AI.",
         data.warnings
       ));
       finishProcess("Video final selesai.");
@@ -377,8 +377,8 @@ function startResultPolling(previousLatestId) {
         state.current = latest;
         window.clearInterval(state.pollTimer);
         state.pollTimer = 0;
-        setStatus("Video baru dan carousel sudah muncul di dashboard.");
-        finishProcess("Video dan carousel selesai, state upload terbaca.");
+        setStatus("Video baru sudah muncul di dashboard.");
+        finishProcess("Video selesai, state upload terbaca.");
       } else if (attempts >= 60) {
         window.clearInterval(state.pollTimer);
         state.pollTimer = 0;
@@ -652,7 +652,6 @@ function localWorkflowSteps() {
   const imageReady = item && (item.assets?.images?.length || 0) >= (item.plan?.scenes?.length || 1);
   const ttsReady = Boolean(item?.assets?.audio?.path || item?.assets?.audio?.url);
   const renderReady = Boolean(item?.assets?.video?.url);
-  const carouselReady = Boolean(item && carouselAssets(item).length >= (item.carousel?.slideCount || 1));
   const uploadReady = Boolean(renderReady && item?.assets?.video?.url);
   const publishReady = publishSuccess(item);
   const stage = state.processStartedAt ? state.localStage : "";
@@ -663,7 +662,6 @@ function localWorkflowSteps() {
     { label: "Gambar", state: stepState(false, stage === "images" || Boolean(item && !imageReady), Boolean(imageReady)), detail: item ? `${item.assets?.images?.length || 0}/${item.plan?.scenes?.length || 0}` : "Menunggu" },
     { label: "TTS", state: stepState(false, stage === "tts" || Boolean(imageReady && !ttsReady), Boolean(ttsReady)), detail: item?.assets?.audio?.provider || "Menunggu" },
     { label: "Render", state: stepState(false, stage === "render" || Boolean(ttsReady && !renderReady), Boolean(renderReady)), detail: stage === "render" ? state.localStageDetail : renderReady ? "Final siap" : "Gambar ke video" },
-    { label: "Carousel", state: stepState(false, stage === "carousel" || Boolean(renderReady && !carouselReady), Boolean(carouselReady)), detail: carouselReady ? `${carouselAssets(item).length} slide` : "4:5 otomatis" },
     { label: "Upload", state: stepState(false, stage === "upload" || Boolean(renderReady && !uploadReady), Boolean(uploadReady)), detail: uploadReady ? "Asset publik" : "Menunggu" },
     { label: "Publish", state: stepState(false, stage === "publish" || Boolean(uploadReady && !publishReady), Boolean(publishReady)), detail: publishReady ? "Terkirim" : "Opsional" }
   ];
@@ -980,7 +978,7 @@ function renderCarouselPreview(item) {
       : "Belum ada carousel";
   }
   if (!slides.length) {
-    els.carouselGrid.innerHTML = `<div class="empty-gallery">Carousel dibuat otomatis setelah generate video selesai.</div>`;
+    els.carouselGrid.innerHTML = `<div class="empty-gallery">Klik Buat Carousel untuk membuat/publish carousel dari item terbaru.</div>`;
     return;
   }
 

@@ -1,10 +1,10 @@
 import { ensureProjectDirs } from "./config.js";
 import { config } from "./config.js";
-import { publishCarouselToFacebook, publishCarouselToInstagram, publishToFacebook, publishToInstagram } from "./facebook.js";
+import { publishToFacebook, publishToInstagram } from "./facebook.js";
 import { generateFullItem } from "./pipeline.js";
 import { absolutizeGeneratedUrls, publicBaseUrl, remoteEnabled, uploadGeneratedStateAndAssets } from "./remote.js";
 import { listContextItems, mergeMemoryItems, saveItem } from "./storage.js";
-import { publishCarouselToTikTok, publishToTikTok } from "./tiktok.js";
+import { publishToTikTok } from "./tiktok.js";
 import { publishToYoutube } from "./youtube-publisher.js";
 
 function argValue(name, fallback = "") {
@@ -31,11 +31,8 @@ const input = {
 };
 
 const requestedClip = boolValue(argValue("--with-clip", process.env.BANYAKTAU_WITH_CLIP || "false"), false);
-const carouselPublishTargetsArg = argValue("--carousel-publish-targets", "");
-if (carouselPublishTargetsArg) process.env.BANYAKTAU_CAROUSEL_PUBLISH_TARGETS = carouselPublishTargetsArg;
 const withClip = false;
 const dailyGenerateLimit = Math.max(0, Number(process.env.BANYAKTAU_DAILY_GENERATE_LIMIT || "3") || 0);
-const dailyCarouselLimit = Math.max(0, Number(process.env.BANYAKTAU_DAILY_CAROUSEL_LIMIT || "1") || 0);
 
 console.log("BanyakTau run started.");
 console.log(`Category=${input.category}, duration=${input.durationSec}, scenes=${input.sceneCount}, withClip=${withClip}`);
@@ -57,15 +54,11 @@ if (!boolValue(process.env.BANYAKTAU_FORCE_GENERATE, false) && await dailyGenera
   process.exit(0);
 }
 
-const carouselLimitReachedBeforeGenerate = await dailyCarouselLimitReached();
 const result = await generateFullItem(input, {
   withClip,
   requireClip: withClip,
-  withCarousel: !carouselLimitReachedBeforeGenerate
+  withCarousel: false
 });
-if (carouselLimitReachedBeforeGenerate) {
-  result.warnings.push(`Carousel tidak dibuat: batas harian carousel tercapai (${dailyCarouselLimit}/hari).`);
-}
 if (remoteEnabled()) {
   result.item = absolutizeGeneratedUrls(result.item);
   await mergeMemoryItems([result.item]);
@@ -74,13 +67,11 @@ if (remoteEnabled()) {
     await uploadGeneratedStateAndAssets({ item: result.item });
     console.log("Remote upload complete.");
     await publishSocialsIfEnabled(result);
-    await publishCarouselIfEnabled(result);
   } catch (error) {
     const message = `Remote upload gagal: ${error.message}`;
     result.warnings.push(message);
     console.warn(message);
     if (config.tiktok.enabled) await publishSocialsIfEnabled(result, { tiktokOnly: true });
-    await publishCarouselIfEnabled(result, { localFilesOnly: true, reason: message });
     if (boolValue(process.env.BANYAKTAU_STRICT_REMOTE, false)) throw error;
   }
 } else if (config.tiktok.enabled) {
@@ -92,7 +83,6 @@ console.log(JSON.stringify({
   id: result.item.id,
   title: result.item.title,
   videoUrl: result.item.assets?.video?.url || "",
-  carouselSlides: result.item.assets?.carousels?.length || 0,
   warnings: result.warnings
 }, null, 2));
 
@@ -224,111 +214,6 @@ async function publishSocialsIfEnabled(result, options = {}) {
   }
 }
 
-async function publishCarouselIfEnabled(result, options = {}) {
-  const requestedTargets = resolveCarouselPublishTargets();
-  if (!requestedTargets.length) return;
-  if (!options.force && await dailyCarouselLimitReached()) {
-    result.warnings.push(`Carousel publish dilewati: batas harian carousel tercapai (${dailyCarouselLimit}/hari).`);
-    return;
-  }
-  const localFilesOnly = Boolean(options.localFilesOnly);
-  const targets = localFilesOnly ? requestedTargets.filter((target) => target === "facebook") : requestedTargets;
-  if (localFilesOnly) {
-    for (const target of requestedTargets.filter((entry) => entry !== "facebook")) {
-      result.warnings.push(`${target} carousel publish dilewati: remote upload gagal, URL publik belum siap.`);
-    }
-  }
-  if (!targets.length) return;
-
-  const item = result.item;
-  const imageUrls = localFilesOnly ? [] : carouselImageUrls(item).filter(isPublicHttpUrl);
-  const imagePaths = carouselImagePaths(item);
-  const urlTargetsReady = imageUrls.length >= 2;
-  const facebookReady = Math.max(imageUrls.length, imagePaths.length) >= 2;
-  const effectiveTargets = targets.filter((target) => {
-    if (target === "facebook") return facebookReady;
-    return urlTargetsReady;
-  });
-
-  if (!facebookReady && targets.includes("facebook")) {
-    result.warnings.push("facebook carousel publish dilewati: minimal 2 gambar carousel belum tersedia.");
-  }
-  if (!urlTargetsReady) {
-    for (const target of targets.filter((entry) => entry !== "facebook")) {
-      result.warnings.push(`${target} carousel publish dilewati: minimal 2 URL gambar publik belum tersedia.`);
-    }
-  }
-  if (!effectiveTargets.length) {
-    return;
-  }
-
-  const published = { errors: {} };
-  const publishOptions = {
-    imageUrls,
-    imagePaths,
-    title: item.title,
-    description: socialDescription(item)
-  };
-  if (effectiveTargets.includes("instagram")) {
-    try {
-      published.instagram = await publishCarouselToInstagram(publishOptions);
-    } catch (error) {
-      published.errors.instagram = error.message;
-    }
-  }
-  if (effectiveTargets.includes("facebook")) {
-    try {
-      published.facebook = await publishCarouselToFacebook(publishOptions);
-    } catch (error) {
-      published.errors.facebook = error.message;
-    }
-  }
-  if (effectiveTargets.includes("tiktok")) {
-    try {
-      published.tiktok = await publishCarouselToTikTok(publishOptions);
-    } catch (error) {
-      published.errors.tiktok = error.message;
-    }
-  }
-
-  const publishedAt = new Date().toISOString();
-  item.publish = {
-    ...(item.publish || {}),
-    carouselPolicy: {
-      mode: carouselPublishTargetMode(),
-      targets
-    },
-    carousel: {
-      ...(item.publish?.carousel || {})
-    }
-  };
-  if (published.instagram) item.publish.carousel.instagram = { ...published.instagram, publishedAt };
-  if (published.facebook) item.publish.carousel.facebook = { ...published.facebook, publishedAt };
-  if (published.tiktok) item.publish.carousel.tiktok = { ...published.tiktok, publishedAt };
-  if (Object.keys(published.errors).length) {
-    item.publish.carouselErrors = {
-      ...(item.publish.carouselErrors || {}),
-      ...published.errors
-    };
-    for (const [platform, message] of Object.entries(published.errors)) {
-      result.warnings.push(`${platform} carousel publish gagal: ${message}`);
-    }
-  }
-
-  await saveItem(item);
-  await mergeMemoryItems([item]);
-  if (remoteEnabled()) {
-    try {
-      await uploadGeneratedStateAndAssets({ item });
-    } catch (error) {
-      const message = `Remote state setelah publish carousel gagal: ${error.message}`;
-      result.warnings.push(message);
-      console.warn(message);
-    }
-  }
-  console.log(`Carousel publish complete: ${carouselPublishSummary(published)}`);
-}
-
 async function dailyGenerationLimitReached() {
   if (!dailyGenerateLimit) return false;
   const [items, workflowCount] = await Promise.all([
@@ -346,27 +231,6 @@ async function dailyGenerationLimitReached() {
     console.log(`Daily generate limit reached: ${count}/${dailyGenerateLimit} for ${today} (state=${stateCount}, workflow=${workflowCount}).`);
   }
   return count >= dailyGenerateLimit;
-}
-
-async function dailyCarouselLimitReached() {
-  if (!dailyCarouselLimit) return false;
-  const [items, workflowCount] = await Promise.all([
-    mergeKnownItems(),
-    countSuccessfulWorkflowRunsToday()
-  ]);
-  const today = localDayKey(new Date());
-  const stateCount = items.filter((item) => {
-    const carousel = item?.publish?.carousel || {};
-    return Object.values(carousel).some((entry) => {
-      const publishedAt = entry?.publishedAt;
-      return publishedAt && localDayKey(new Date(publishedAt)) === today;
-    });
-  }).length;
-  const count = Math.max(stateCount, workflowCount);
-  if (count >= dailyCarouselLimit) {
-    console.log(`Daily carousel limit reached: ${count}/${dailyCarouselLimit} for ${today} (state=${stateCount}, workflow=${workflowCount}).`);
-  }
-  return count >= dailyCarouselLimit;
 }
 
 async function countSuccessfulWorkflowRunsToday() {
@@ -407,12 +271,6 @@ function publishTargetMode() {
     .toLowerCase();
 }
 
-function carouselPublishTargetMode() {
-  return String(process.env.BANYAKTAU_CAROUSEL_PUBLISH_TARGETS || "none")
-    .trim()
-    .toLowerCase();
-}
-
 function resolvePublishTargets(options = {}) {
   if (options.tiktokOnly) return config.tiktok.enabled ? ["tiktok"] : [];
   const enabled = enabledPublishTargets();
@@ -436,46 +294,6 @@ function enabledPublishTargets() {
   if (config.instagram.enabled) targets.push("instagram");
   if (config.facebook.enabled) targets.push("facebook");
   return targets;
-}
-
-function resolveCarouselPublishTargets() {
-  const enabled = enabledCarouselTargets();
-  const mode = carouselPublishTargetMode();
-  if (!enabled.length || ["none", "off", "false", "0", ""].includes(mode)) return [];
-  if (mode === "all") return enabled;
-  if (mode === "auto" || mode === "single" || mode === "one") return enabled.slice(0, 1);
-
-  const requested = mode
-    .split(/[\s,]+/)
-    .map((target) => target.trim())
-    .filter(Boolean);
-  return requested.filter((target) => enabled.includes(target));
-}
-
-function enabledCarouselTargets() {
-  const targets = [];
-  if (config.instagram.enabled) targets.push("instagram");
-  if (config.facebook.enabled) targets.push("facebook");
-  if (config.tiktok.enabled) targets.push("tiktok");
-  return targets;
-}
-
-function carouselImageUrls(item) {
-  return (item.assets?.carousels || [])
-    .filter((asset) => asset?.url)
-    .sort((a, b) => Number(a.slideIndex || 0) - Number(b.slideIndex || 0))
-    .map((asset) => asset.url);
-}
-
-function carouselImagePaths(item) {
-  return (item.assets?.carousels || [])
-    .filter((asset) => asset?.path)
-    .sort((a, b) => Number(a.slideIndex || 0) - Number(b.slideIndex || 0))
-    .map((asset) => asset.path);
-}
-
-function isPublicHttpUrl(value) {
-  return /^https?:\/\//i.test(String(value || ""));
 }
 
 async function youtubeDailyLimitReached() {
@@ -566,15 +384,6 @@ function publishSummary(published) {
   if (published.youtube) rows.push(`youtube=${published.youtube.url || published.youtube.videoId || "ok"}`);
   if (published.facebook) rows.push(`facebook=${published.facebook.url || published.facebook.videoId || "ok"}`);
   if (published.instagram) rows.push(`instagram=${published.instagram.url || published.instagram.mediaId || "ok"}`);
-  if (published.tiktok) rows.push(`tiktok=${published.tiktok.publishId || published.tiktok.mode || "ok"}`);
-  if (Object.keys(published.errors || {}).length) rows.push(`errors=${Object.keys(published.errors).join(",")}`);
-  return rows.join(" ") || "skipped";
-}
-
-function carouselPublishSummary(published) {
-  const rows = [];
-  if (published.instagram) rows.push(`instagram=${published.instagram.url || published.instagram.mediaId || "ok"}`);
-  if (published.facebook) rows.push(`facebook=${published.facebook.url || published.facebook.postId || "ok"}`);
   if (published.tiktok) rows.push(`tiktok=${published.tiktok.publishId || published.tiktok.mode || "ok"}`);
   if (Object.keys(published.errors || {}).length) rows.push(`errors=${Object.keys(published.errors).join(",")}`);
   return rows.join(" ") || "skipped";

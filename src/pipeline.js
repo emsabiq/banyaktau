@@ -37,7 +37,7 @@ export async function generateFullItem(input = {}, options = {}) {
     warnings.push("Clip video AI dimatikan agar biaya hemat. Render memakai gambar + TTS saja.");
   }
   await renderAndPersist(item);
-  if (options.withCarousel !== false) {
+  if (options.withCarousel === true) {
     await ensureCarousel(item, { warnings });
   }
   return { item, warnings };
