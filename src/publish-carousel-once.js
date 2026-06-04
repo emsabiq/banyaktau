@@ -9,7 +9,7 @@ import { getItem, listContextItems, listItems, mergeMemoryItems, saveItem } from
 import { createIdeaRecommendations, createKnowledgeDraft, selectMostNovelIdea } from "./story-engine.js";
 import { publishCarouselToTikTok } from "./tiktok.js";
 
-const fallbackPublicBaseUrl = "https://emsa.pro/banyaktau";
+const fallbackPublicBaseUrl = "https://www.emsa.pro/banyaktau";
 
 function argValue(name, fallback = "") {
   const index = process.argv.indexOf(name);
