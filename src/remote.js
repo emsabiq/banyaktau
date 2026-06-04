@@ -28,7 +28,9 @@ export function remoteConfig() {
     user: first("USER"),
     password: first("PASSWORD"),
     remoteDir: first("REMOTE_DIR"),
-    timeoutMs: Number(first("UPLOAD_TIMEOUT_SECONDS", "180")) * 1000
+    timeoutMs: Number(first("UPLOAD_TIMEOUT_SECONDS", "180")) * 1000,
+    connectTimeoutMs: Number(first("CONNECT_TIMEOUT_SECONDS", "30")) * 1000,
+    uploadAttempts: Math.max(1, Number(first("UPLOAD_ATTEMPTS", "3")) || 3)
   };
 }
 
@@ -45,7 +47,9 @@ export function assertRemoteConfig() {
 
 export async function uploadGeneratedStateAndAssets(options = {}) {
   const cfg = assertRemoteConfig();
-  await withRemoteClient(cfg, async (client) => {
+  // Retry the entire connect+upload session so a transient ETIMEDOUT or a
+  // dropped connection mid-transfer does not abort the whole carousel publish.
+  await retryRemote(() => withRemoteClient(cfg, async (client) => {
     if (options.item) {
       await uploadItemAssets(client, options.item);
     } else {
@@ -60,7 +64,7 @@ export async function uploadGeneratedStateAndAssets(options = {}) {
     if (await fileExists(memoryPath)) {
       await uploadJsonFile(client, memoryPath, "state/memory.json");
     }
-  });
+  }), cfg.uploadAttempts);
 }
 
 export function absolutizeGeneratedUrls(item) {
@@ -95,9 +99,9 @@ export function absolutizeGeneratedUrls(item) {
 
 export async function withRemoteClient(cfg, callback) {
   if (cfg.driver === "ftp") {
-    const client = new FtpClient(cfg.timeoutMs);
+    const client = new FtpClient(cfg.connectTimeoutMs || cfg.timeoutMs);
     try {
-      await retryRemote(() => client.access({ host: cfg.host, port: cfg.port, user: cfg.user, password: cfg.password, secure: false }));
+      await client.access({ host: cfg.host, port: cfg.port, user: cfg.user, password: cfg.password, secure: false });
       await client.ensureDir(cfg.remoteDir);
       await callback(new FtpAdapter(client, cfg.remoteDir));
     } finally {
@@ -108,13 +112,13 @@ export async function withRemoteClient(cfg, callback) {
 
   const client = new SftpClient();
   try {
-    await retryRemote(() => client.connect({
+    await client.connect({
       host: cfg.host,
       port: cfg.port,
       username: cfg.user,
       password: cfg.password,
-      readyTimeout: cfg.timeoutMs
-    }));
+      readyTimeout: cfg.connectTimeoutMs || cfg.timeoutMs
+    });
     await client.mkdir(cfg.remoteDir, true);
     await callback(new SftpAdapter(client, cfg.remoteDir));
   } finally {
@@ -165,6 +169,7 @@ async function retryRemote(fn, attempts = 3) {
       return await fn();
     } catch (error) {
       lastError = error;
+      console.warn(`[Remote] Upload attempt ${attempt}/${attempts} gagal: ${error.message}`);
       if (attempt === attempts) break;
       await new Promise((resolve) => setTimeout(resolve, attempt * 3000));
     }
