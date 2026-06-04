@@ -40,7 +40,7 @@ export default async function handler(req, res) {
 
     const dispatch = await dispatchWorkflow({
       target: clean(body.target || "all"),
-      item_id: clean(body.itemId || ""),
+      item_id: body.useExistingItem === true ? clean(body.itemId || "") : "",
       force: force ? "true" : "false",
       regenerate: clean(body.regenerate || "false").toLowerCase() === "true" ? "true" : "false",
       topic: clean(body.topic || ""),

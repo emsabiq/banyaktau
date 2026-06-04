@@ -165,10 +165,7 @@ async function pickItem() {
     return item;
   }
 
-  const items = await listItems();
-  const item = items.find((entry) => entry?.plan?.scenes?.length || entry?.assets?.carousels?.length);
-  if (!item) throw new Error("Belum ada item yang bisa dipakai untuk carousel.");
-  return item;
+  return null;
 }
 
 async function createCarouselOnlyItem(warnings) {
@@ -194,7 +191,7 @@ async function createCarouselOnlyItem(warnings) {
 
   await saveItem(item);
   await mergeMemoryItems([item]);
-  warnings.push("Carousel dibuat dari ide baru karena runner tidak menemukan item siap pakai.");
+  warnings.push("Carousel dibuat dari ide baru agar tidak memakai ide video terbaru.");
   return item;
 }
 
@@ -323,8 +320,12 @@ async function main() {
     item = await pickItem();
   } catch (error) {
     warnings.push(error.message);
+  }
+
+  if (!item) {
     item = await createCarouselOnlyItem(warnings);
   }
+
   if (regenerate || !hasUsablePublicCarousel(item)) {
     await ensureCarousel(item, { warnings, strict: true });
   }

@@ -336,13 +336,12 @@ async function generateCarousel() {
   const form = new FormData(els.form);
   startProcess("Publish carousel otomatis");
   setLocalStage("workflow", "Mengirim pekerjaan carousel ke GitHub Actions...");
-  setBusy(true, "Membuat/publish carousel dari item terbaru atau ide baru...");
+  setBusy(true, "Membuat/publish carousel dari ide baru...");
   try {
     const data = await api("/api/carousel", {
       method: "POST",
       body: JSON.stringify({
         target: "all",
-        itemId: state.current?.id || "",
         topic: form.get("topic") || "",
         category: form.get("category") || "random",
         force: "false",
@@ -981,7 +980,7 @@ function renderCarouselPreview(item) {
       : "Belum ada carousel";
   }
   if (!slides.length) {
-    els.carouselGrid.innerHTML = `<div class="empty-gallery">Klik Buat Carousel untuk membuat/publish carousel dari item terbaru.</div>`;
+    els.carouselGrid.innerHTML = `<div class="empty-gallery">Klik Buat Carousel untuk membuat/publish carousel dari ide baru.</div>`;
     return;
   }
 

@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import PImage from "pureimage";
 import { config, paths } from "./config.js";
@@ -160,21 +161,53 @@ export async function renderCarouselSlide({ item, carousel, slide, backgroundPat
 
   drawCoverImage(ctx, background, targetW, targetH);
   drawToneLayers(ctx);
-  drawChrome(ctx, {
+
+  // Draw BanyakTau watermark logo image at top-right
+  const logoPath = path.join(paths.publicDir, "assets", "banyaktau-logo-watermark.png");
+  try {
+    if (fsSync.existsSync(logoPath)) {
+      const logoImg = await decodeImage(logoPath);
+      const logoW = 180;
+      const logoH = Math.round(logoImg.height * (logoW / logoImg.width));
+      ctx.drawImage(logoImg, targetW - 90 - logoW, 90, logoW, logoH);
+    }
+  } catch (err) {
+    console.warn("[Carousel] Gagal menggambar logo watermark:", err.message);
+  }
+
+  const textLines = drawChrome(ctx, {
     pageText: `${slide.index}/${carousel.slideCount}`,
-    titleFont: fonts.title
+    titleFont: fonts.body
   });
 
   if (slide.type === "title") {
-    drawTitleSlide(ctx, slide, fonts);
+    textLines.push(...drawTitleSlide(ctx, slide, fonts));
   } else {
-    drawContentSlide(ctx, slide, fonts);
+    textLines.push(...drawContentSlide(ctx, slide, fonts));
+  }
+
+  if (slide.type !== "conclusion") {
+    textLines.push({
+      text: "GESER → ↓",
+      x: targetW - 90,
+      y: 1250,
+      font: fonts.body,
+      fontSize: 28,
+      align: "right",
+      fill: "#ffffff",
+      italic: false
+    });
   }
 
   const filename = `${item.id}-carousel-${String(slide.index).padStart(2, "0")}-${safeFilename(carousel.title)}.jpg`;
   const outputPath = path.join(paths.carouselDir, filename);
-  const out = fsSync.createWriteStream(outputPath);
-  await PImage.encodeJPEGToStream(canvas, out, 92);
+  if (ffmpegAvailable() && textLines.length) {
+    await renderTextWithFfmpeg({ canvas, outputPath, textLines, item, slide });
+  } else {
+    drawTextLayout(ctx, textLines);
+    const out = fsSync.createWriteStream(outputPath);
+    await PImage.encodeJPEGToStream(canvas, out, 92);
+  }
 
   return {
     slideIndex: slide.index,
@@ -251,108 +284,258 @@ function fallbackScene(index, topic) {
 
 function drawTitleSlide(ctx, slide, fonts) {
   const lines = fitTextLines(ctx, slide.titleText, {
-    fontFamily: fonts.title,
-    fontSize: 146,
-    maxWidth: 950,
+    fontFamily: fonts.title.family,
+    fontSize: 130,
+    maxWidth: 900,
     maxLines: 5,
-    minFontSize: 92,
+    minFontSize: 90,
     upper: true
   });
   const lineHeight = Math.round(lines.fontSize * 0.88);
   const totalHeight = lineHeight * lines.rows.length;
-  let y = targetH - 72 - totalHeight + lineHeight / 2;
+  // Bottom-aligned layout with left alignment matching the demo script (x=90)
+  let y = targetH - 90 - totalHeight + 15;
+  const textLines = [];
 
   for (const row of lines.rows) {
-    drawGoldText(ctx, row, targetW / 2, y, {
-      fontFamily: fonts.title,
+    textLines.push({
+      text: row,
+      x: 90,
+      y,
+      font: fonts.title,
       fontSize: lines.fontSize,
-      align: "center"
+      align: "left",
+      fill: "#eda51d"
     });
     y += lineHeight;
   }
+  return textLines;
 }
 
 function drawContentSlide(ctx, slide, fonts) {
   const title = fitTextLines(ctx, slide.titleText, {
-    fontFamily: fonts.title,
-    fontSize: 108,
-    maxWidth: 940,
+    fontFamily: fonts.title.family,
+    fontSize: 145,
+    maxWidth: 840,
     maxLines: 2,
-    minFontSize: 76,
+    minFontSize: 90,
     upper: true
   });
-  const titleLineHeight = Math.round(title.fontSize * 0.9);
-  const titleTotal = titleLineHeight * title.rows.length;
-  let y = 785;
+  const titleLineHeight = Math.round(title.fontSize * 0.95);
+  const titleTotalHeight = title.rows.length * titleLineHeight;
+  const titleBottomY = 1000;
+  let y = titleBottomY - titleTotalHeight;
+  const textLines = [];
 
   for (const row of title.rows) {
-    drawGoldText(ctx, row, targetW / 2, y, {
-      fontFamily: fonts.title,
+    textLines.push({
+      text: row,
+      x: targetW / 2,
+      y,
+      font: fonts.title,
       fontSize: title.fontSize,
-      align: "center"
+      align: "center",
+      fill: "#eda51d"
     });
     y += titleLineHeight;
   }
 
-  const body = fitTextLines(ctx, slide.bodyText, {
-    fontFamily: fonts.body,
-    fontSize: 54,
-    maxWidth: 970,
-    maxLines: titleTotal > 180 ? 5 : 7,
-    minFontSize: 38,
-    upper: false
+  let body = fitTextLines(ctx, slide.bodyText, {
+    fontFamily: fonts.body.family,
+    fontSize: 46,
+    maxWidth: 880,
+    maxLines: 8,
+    minFontSize: 32,
+    upper: true
   });
-  const bodyLineHeight = Math.round(body.fontSize * 1.12);
-  let bodyY = y + 30;
+  body.fontSize = Math.min(body.fontSize, title.fontSize - 45);
+  let bodyLineHeight = Math.round(body.fontSize * 1.28);
+  let bodyY = y + 24;
+
+  // Prevent bottom overflow (keep safe margin above the swipe indicator at 1250)
+  const maxY = 1220;
+  let totalBodyHeight = body.rows.length * bodyLineHeight;
+  while (bodyY + totalBodyHeight > maxY && body.fontSize > 24) {
+    body.fontSize -= 2;
+    body.fontSize = Math.min(body.fontSize, title.fontSize - 45);
+    bodyLineHeight = Math.round(body.fontSize * 1.28);
+    ctx.font = `${body.fontSize}px ${fonts.body.family}`;
+    body.rows = wrapText(ctx, slide.bodyText.toUpperCase(), 880);
+    totalBodyHeight = body.rows.length * bodyLineHeight;
+  }
 
   for (const row of body.rows) {
-    drawStrokeFillText(ctx, row, targetW / 2, bodyY, {
-      fontFamily: fonts.body,
+    textLines.push({
+      text: row,
+      x: targetW / 2,
+      y: bodyY,
+      font: fonts.body,
       fontSize: body.fontSize,
       align: "center",
-      fill: "#fffdf7"
+      fill: "#ffffff",
+      italic: true
     });
     bodyY += bodyLineHeight;
   }
+  return textLines;
 }
 
 function drawToneLayers(ctx) {
   ctx.fillStyle = "rgba(0,0,0,0.34)";
   ctx.fillRect(0, 0, targetW, targetH);
 
-  const start = Math.round(targetH * 0.43);
-  const steps = 48;
+  const start = Math.round(targetH * 0.55);
+  const steps = targetH - start;
   for (let i = 0; i < steps; i += 1) {
-    const p = i / (steps - 1);
-    const y = Math.round(start + (targetH - start) * p);
-    const h = Math.ceil((targetH - start) / steps) + 2;
-    const alpha = 0.16 + Math.pow(p, 1.5) * 0.8;
+    const p = steps <= 1 ? 1 : i / (steps - 1);
+    const y = start + i;
+    const alpha = 0.1 + Math.pow(p, 1.35) * 0.76;
     ctx.fillStyle = `rgba(0,0,0,${alpha.toFixed(3)})`;
-    ctx.fillRect(0, y, targetW, h);
+    ctx.fillRect(0, y, targetW, 1);
   }
 }
 
 function drawChrome(ctx, { pageText, titleFont }) {
-  const pageX = targetW - 84;
-  const pageY = 72;
-  ctx.fillStyle = "rgba(38,38,38,0.86)";
-  ctx.beginPath();
-  ctx.arc(pageX, pageY, 52, 0, Math.PI * 2);
-  ctx.fill();
+  // Page number and text indicators are disabled completely per request.
+  return [];
+}
 
-  drawStrokeFillText(ctx, pageText, pageX, pageY + 1, {
-    fontFamily: titleFont,
-    fontSize: 35,
-    align: "center",
-    fill: "#ffffff"
-  });
+async function renderTextWithFfmpeg({ canvas, outputPath, textLines, item, slide }) {
+  await fs.mkdir(paths.workDir, { recursive: true });
+  const workName = `${item.id}-carousel-${String(slide.index).padStart(2, "0")}`;
+  const basePath = path.join(paths.workDir, `${workName}-base.jpg`);
+  const textDir = path.join(paths.workDir, `${workName}-text`);
+  await fs.mkdir(textDir, { recursive: true });
 
-  drawStrokeFillText(ctx, "BANYAKTAU", targetW - 66, 154, {
-    fontFamily: titleFont,
-    fontSize: 58,
-    align: "right",
-    fill: "#ffffff"
+  const baseOut = fsSync.createWriteStream(basePath);
+  await PImage.encodeJPEGToStream(canvas, baseOut, 94);
+
+  const goldTexturePath = path.join(paths.publicDir, "assets", "gold-texture.png");
+  const hasTexture = false;
+  const inputs = ["-i", basePath];
+
+  const graph = ["[0:v]format=rgba[base0]"];
+  if (hasTexture) {
+    graph.push(`[1:v]scale=${targetW}:${targetH}:force_original_aspect_ratio=increase,crop=${targetW}:${targetH}[tex_scaled]`);
+  }
+
+  for (let i = 0; i < textLines.length; i += 1) {
+    const line = textLines[i];
+    const textFile = path.join(textDir, `line-${String(i + 1).padStart(2, "0")}.txt`);
+    await fs.writeFile(textFile, line.text, "utf8");
+    graph.push(`${drawTextFilter(line, textFile, hasTexture)}[txt${i}]`);
+
+    const yVal = Math.max(0, Math.round(line.y - line.fontSize * 0.56));
+    const shearShift = line.italic ? Math.round(0.10 * (yVal - targetH / 2)) : 0;
+    const overlayX = shearShift;
+
+    // If it's a gold line (fill: "#eda51d") and texture is available, apply alphamerge
+    if (line.fill === "#eda51d" && hasTexture) {
+      graph.push(`[tex_scaled][txt${i}]alphamerge[tex_line_${i}]`);
+      graph.push(`[base${i}][tex_line_${i}]overlay=${overlayX}:0:format=rgb[base${i + 1}]`);
+    } else {
+      graph.push(`[base${i}][txt${i}]overlay=${overlayX}:0:format=rgb[base${i + 1}]`);
+    }
+  }
+  const outputLabel = `[base${textLines.length}]`;
+
+  const result = spawnSync("ffmpeg", [
+    "-y",
+    "-hide_banner",
+    "-loglevel", "error",
+    ...inputs,
+    "-filter_complex", graph.join(";"),
+    "-map", outputLabel,
+    "-frames:v", "1",
+    "-q:v", "2",
+    outputPath
+  ], { encoding: "utf8", windowsHide: true });
+
+  if (result.status !== 0) {
+    throw new Error(`FFmpeg text render gagal: ${result.stderr || result.error?.message || "unknown error"}`);
+  }
+}
+
+function drawTextFilter(line, textFile, hasTexture = false) {
+  const fontPart = line.font.file
+    ? `fontfile='${escapeFfmpegPath(line.font.file)}'`
+    : "font='serif'";
+  const y = Math.max(0, Math.round(line.y - line.fontSize * 0.56));
+  
+  // If we are texturing this gold line, draw it in solid white to act as a mask
+  const fillVal = (line.fill === "#eda51d" && hasTexture) ? "#ffffff" : line.fill;
+
+  const drawText = [
+    `drawtext=${fontPart}`,
+    `textfile='${escapeFfmpegPath(textFile)}'`,
+    `fontsize=${Math.round(line.fontSize)}`,
+    `fontcolor=${ffmpegColor(fillVal)}`,
+    `x=${textXExpression(line, y)}`,
+    `y=${y}`,
+    "fix_bounds=1"
+  ].join(":");
+  const filters = [
+    `color=color=black@0.0:size=${targetW}x${targetH}`,
+    "format=rgba",
+    drawText
+  ];
+  if (line.italic) {
+    filters.push("shear=shx=0.10:fillcolor=black@0.0");
+  }
+  return filters.join(",");
+}
+
+function textXExpression(line, y = 0) {
+  const x = Math.round(line.x);
+  if (line.align === "center") return `${x}-text_w/2`;
+  if (line.align === "right" || line.align === "end") return `${x}-text_w`;
+  return String(x);
+}
+
+function escapeFfmpegPath(filePath) {
+  return path.resolve(filePath)
+    .replace(/\\/g, "/")
+    .replace(/:/g, "\\:")
+    .replace(/'/g, "\\'");
+}
+
+function ffmpegColor(value) {
+  const color = String(value || "#ffffff").trim();
+  return color.startsWith("#") ? `0x${color.slice(1)}` : color;
+}
+
+function ffmpegAvailable() {
+  const result = spawnSync("ffmpeg", ["-version"], { encoding: "utf8", windowsHide: true });
+  return result.status === 0;
+}
+
+function drawTextLayout(ctx, lines) {
+  for (const line of lines) {
+    drawCanvasTextLine(ctx, line);
+  }
+}
+
+function drawCanvasTextLine(ctx, line) {
+  if (!line.italic) {
+    drawStrokeFillText(ctx, line.text, line.x, line.y, {
+      fontFamily: line.font.family,
+      fontSize: line.fontSize,
+      align: line.align,
+      fill: line.fill
+    });
+    return;
+  }
+
+  ctx.save();
+  ctx.translate(line.x, line.y);
+  ctx.transform(1, 0, 0.10, 1, 0, 0);
+  drawStrokeFillText(ctx, line.text, 0, 0, {
+    fontFamily: line.font.family,
+    fontSize: line.fontSize,
+    align: line.align,
+    fill: line.fill
   });
+  ctx.restore();
 }
 
 function drawGoldText(ctx, text, x, y, options) {
@@ -366,15 +549,28 @@ function drawGoldText(ctx, text, x, y, options) {
 function drawStrokeFillText(ctx, text, x, y, options) {
   const fontSize = Math.round(options.fontSize || 48);
   const fontFamily = options.fontFamily || "sans-serif";
-  ctx.font = `${fontSize}px '${fontFamily}'`;
-  ctx.textAlign = options.align || "center";
+  ctx.font = `${fontSize}px ${fontFamily}`;
+  const align = options.align || "center";
+  const baseline = "middle";
+  ctx.textAlign = "left";
   ctx.textBaseline = "middle";
 
-  // Plain single fill only: no stroke/outline, no drop shadow, no gradient.
-  // Letter counters (holes inside O, A, e, etc.) stay transparent thanks to
-  // the pureimage even-odd fill patch in scripts/patch-pureimage.js.
+  // Draw each glyph separately. PureImage can produce horizontal artifacts when
+  // it fills a whole sentence as one path, especially with large display text.
   ctx.fillStyle = options.fill || "#ffffff";
-  ctx.fillText(text, x, y);
+  const chars = textGraphemes(text);
+  let cursor = align === "right" || align === "end"
+    ? x - measureTextWidth(ctx, chars)
+    : align === "center"
+      ? x - measureTextWidth(ctx, chars) / 2
+      : x;
+
+  for (const char of chars) {
+    if (char !== " ") ctx.fillText(char, cursor, y);
+    cursor += measureTextWidth(ctx, [char]);
+  }
+  ctx.textAlign = align;
+  ctx.textBaseline = baseline;
 }
 
 function fitTextLines(ctx, value, options) {
@@ -384,9 +580,9 @@ function fitTextLines(ctx, value, options) {
   let rows = [];
 
   while (fontSize >= minFontSize) {
-    ctx.font = `${fontSize}px '${options.fontFamily}'`;
+    ctx.font = `${fontSize}px ${options.fontFamily}`;
     rows = wrapText(ctx, text, options.maxWidth);
-    const widest = Math.max(...rows.map((row) => ctx.measureText(row).width), 1);
+    const widest = Math.max(...rows.map((row) => measureTextWidth(ctx, row)), 1);
     if (rows.length <= options.maxLines && widest <= options.maxWidth) break;
     fontSize -= 2;
   }
@@ -394,9 +590,9 @@ function fitTextLines(ctx, value, options) {
   // If it still doesn't fit within maxLines at minFontSize, try shrinking down to 14px
   if (rows.length > options.maxLines && fontSize > 14) {
     while (fontSize >= 14) {
-      ctx.font = `${fontSize}px '${options.fontFamily}'`;
+      ctx.font = `${fontSize}px ${options.fontFamily}`;
       rows = wrapText(ctx, text, options.maxWidth);
-      const widest = Math.max(...rows.map((row) => ctx.measureText(row).width), 1);
+      const widest = Math.max(...rows.map((row) => measureTextWidth(ctx, row)), 1);
       if (rows.length <= options.maxLines && widest <= options.maxWidth) break;
       fontSize -= 1;
     }
@@ -412,7 +608,7 @@ function wrapText(ctx, value, maxWidth) {
 
   for (const word of words) {
     const next = line ? `${line} ${word}` : word;
-    if (ctx.measureText(next).width > maxWidth && line) {
+    if (measureTextWidth(ctx, next) > maxWidth && line) {
       lines.push(line);
       line = word;
     } else {
@@ -455,27 +651,60 @@ async function registerFirstFont(name, candidates) {
       const font = PImage.registerFont(candidate, name);
       if (font && typeof font.loadSync === "function") font.loadSync();
       else if (font && typeof font.load === "function") await new Promise((resolve) => font.load(resolve));
-      return name;
+      return { family: name, file: candidate };
     } catch {
       // Try the next candidate.
     }
   }
-  return "sans-serif";
+  return { family: "sans-serif", file: "" };
 }
 
 function titleFontCandidates() {
   return [
+    path.join(paths.publicDir, "assets", "fonts", "BebasNeue-Regular.otf"),
+    path.join(paths.publicDir, "assets", "fonts", "PlusJakartaSans-ExtraBold.ttf"),
     process.env.CAROUSEL_TITLE_FONT_FILE,
-    path.join(paths.publicDir, "assets", "fonts", "scholar-regular.otf")
+    windowsScholarFontPath(),
+    path.join(paths.publicDir, "assets", "fonts", "scholar-regular.otf"),
+    path.join(paths.publicDir, "assets", "fonts", "PlusJakartaSans-Bold.ttf")
   ];
 }
 
 function bodyFontCandidates() {
   return [
+    path.join(paths.publicDir, "assets", "fonts", "PlusJakartaSans-Bold.ttf"),
     process.env.CAROUSEL_BODY_FONT_FILE,
     path.join(paths.publicDir, "assets", "fonts", "PlusJakartaSans-Regular.ttf"),
+    windowsScholarFontPath(),
     path.join(paths.publicDir, "assets", "fonts", "scholar-regular.otf")
   ];
+}
+
+function windowsScholarFontPath() {
+  return path.join(process.env.LOCALAPPDATA || "C:\\Users\\Lenovo\\AppData\\Local", "Microsoft", "Windows", "Fonts", "SCHOLAR-REGULAR.OTF");
+}
+
+function measureTextWidth(ctx, value) {
+  const chars = Array.isArray(value) ? value : textGraphemes(value);
+  return chars.reduce((total, char) => total + measureGlyphWidth(ctx, char), 0);
+}
+
+function measureGlyphWidth(ctx, char) {
+  const width = ctx.measureText(char).width;
+  if (/\s/.test(char)) {
+    const fallback = Math.max(ctx.measureText("n").width * 0.48, Number(ctx._font?.size || 48) * 0.24);
+    return Math.max(width, fallback);
+  }
+  return width;
+}
+
+function textGraphemes(value) {
+  const text = String(value || "");
+  if (globalThis.Intl?.Segmenter) {
+    const segmenter = new Intl.Segmenter("id", { granularity: "grapheme" });
+    return [...segmenter.segment(text)].map((entry) => entry.segment);
+  }
+  return Array.from(text);
 }
 
 function cleanDisplayText(value, max = 200) {

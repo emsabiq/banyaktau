@@ -8,7 +8,7 @@ name: BanyakTau Publish Carousel
         required: false
         default: "all"
       item_id:
-        description: "Optional item id. Empty uses latest item."
+        description: "Optional item id. Empty creates a fresh carousel-only idea."
         required: false
         default: ""
       force:
