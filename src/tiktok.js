@@ -172,6 +172,13 @@ function normalizeCaption(value) {
     .slice(0, 2200);
 }
 
+function normalizePhotoTitle(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 90);
+}
+
 function pickPrivacyLevel(options = []) {
   const values = options.map((item) => clean(item)).filter(Boolean);
   const desired = config.tiktok.privacyLevel || "SELF_ONLY";
@@ -324,5 +331,85 @@ export async function publishToTikTok({ videoUrl, videoPath, caption }) {
     if (config.tiktok.publishMode === "direct") throw error;
     console.warn(`TikTok direct post gagal, coba inbox upload: ${error.message}`);
     return publishInbox({ videoUrl, videoPath });
+  }
+}
+
+async function publishPhotosDirect({ imageUrls, title, description }) {
+  const creator = await queryTikTokCreatorInfo();
+  const privacyLevel = pickPrivacyLevel(creator.privacy_level_options || []);
+  const data = await postJson("/v2/post/publish/content/init/", {
+    post_info: {
+      title: normalizePhotoTitle(title),
+      description: normalizeCaption(description),
+      privacy_level: privacyLevel,
+      disable_comment: Boolean(config.tiktok.disableComment || creator.comment_disabled),
+      auto_add_music: true,
+      brand_content_toggle: false,
+      brand_organic_toggle: false
+    },
+    source_info: {
+      source: "PULL_FROM_URL",
+      photo_cover_index: 0,
+      photo_images: imageUrls
+    },
+    post_mode: "DIRECT_POST",
+    media_type: "PHOTO"
+  });
+
+  return {
+    ok: Boolean(data.data?.publish_id),
+    publishId: data.data?.publish_id || "",
+    mode: "direct",
+    source: "PULL_FROM_URL",
+    privacyLevel,
+    creatorUsername: creator.creator_username || "",
+    type: "tiktok_photo_direct_post"
+  };
+}
+
+async function publishPhotosInbox({ imageUrls, title, description }) {
+  await ensureTikTokAccessToken();
+  const data = await postJson("/v2/post/publish/content/init/", {
+    post_info: {
+      title: normalizePhotoTitle(title),
+      description: normalizeCaption(description)
+    },
+    source_info: {
+      source: "PULL_FROM_URL",
+      photo_cover_index: 0,
+      photo_images: imageUrls
+    },
+    post_mode: "MEDIA_UPLOAD",
+    media_type: "PHOTO"
+  });
+
+  return {
+    ok: Boolean(data.data?.publish_id),
+    publishId: data.data?.publish_id || "",
+    mode: "inbox",
+    source: "PULL_FROM_URL",
+    type: "tiktok_photo_inbox_upload"
+  };
+}
+
+export async function publishCarouselToTikTok({ imageUrls, title, description }) {
+  if (!Array.isArray(imageUrls) || imageUrls.length < 2) {
+    throw new Error("TikTok photo carousel butuh minimal 2 public image URLs.");
+  }
+  assertTikTokPublishConfig();
+  const urls = imageUrls.slice(0, 35);
+
+  if (config.tiktok.publishMode === "inbox") {
+    return publishPhotosInbox({ imageUrls: urls, title, description });
+  }
+
+  try {
+    return await publishPhotosDirect({ imageUrls: urls, title, description });
+  } catch (error) {
+    if (isUnauditedDirectPostError(error)) {
+      console.warn(`TikTok photo direct post dibatasi audit app, fallback ke inbox upload: ${error.message}`);
+      return publishPhotosInbox({ imageUrls: urls, title, description });
+    }
+    throw error;
   }
 }

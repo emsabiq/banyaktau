@@ -41,6 +41,7 @@ export const paths = {
   dataDir: path.join(rootDir, "data"),
   generatedDir: path.join(rootDir, "generated"),
   imageDir: path.join(rootDir, "generated", "images"),
+  carouselDir: path.join(rootDir, "generated", "carousels"),
   audioDir: path.join(rootDir, "generated", "audio"),
   clipDir: path.join(rootDir, "generated", "clips"),
   thumbnailDir: path.join(rootDir, "generated", "thumbnails"),

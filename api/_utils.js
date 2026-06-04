@@ -58,6 +58,7 @@ export function normalizeRemoteItemUrls(items) {
       audio: fix(item.assets?.audio),
       thumbnail: fix(item.assets?.thumbnail),
       images: (item.assets?.images || []).map(fix),
+      carousels: (item.assets?.carousels || []).map(fix),
       clips: (item.assets?.clips || []).map(fix)
     }
   }));

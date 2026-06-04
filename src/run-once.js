@@ -1,10 +1,10 @@
 import { ensureProjectDirs } from "./config.js";
 import { config } from "./config.js";
-import { publishToFacebook, publishToInstagram } from "./facebook.js";
+import { publishCarouselToFacebook, publishCarouselToInstagram, publishToFacebook, publishToInstagram } from "./facebook.js";
 import { generateFullItem } from "./pipeline.js";
 import { absolutizeGeneratedUrls, publicBaseUrl, remoteEnabled, uploadGeneratedStateAndAssets } from "./remote.js";
 import { listContextItems, mergeMemoryItems, saveItem } from "./storage.js";
-import { publishToTikTok } from "./tiktok.js";
+import { publishCarouselToTikTok, publishToTikTok } from "./tiktok.js";
 import { publishToYoutube } from "./youtube-publisher.js";
 
 function argValue(name, fallback = "") {
@@ -31,6 +31,8 @@ const input = {
 };
 
 const requestedClip = boolValue(argValue("--with-clip", process.env.BANYAKTAU_WITH_CLIP || "false"), false);
+const carouselPublishTargetsArg = argValue("--carousel-publish-targets", "");
+if (carouselPublishTargetsArg) process.env.BANYAKTAU_CAROUSEL_PUBLISH_TARGETS = carouselPublishTargetsArg;
 const withClip = false;
 const dailyGenerateLimit = Math.max(0, Number(process.env.BANYAKTAU_DAILY_GENERATE_LIMIT || "3") || 0);
 
@@ -63,6 +65,7 @@ if (remoteEnabled()) {
     await uploadGeneratedStateAndAssets({ item: result.item });
     console.log("Remote upload complete.");
     await publishSocialsIfEnabled(result);
+    await publishCarouselIfEnabled(result);
   } catch (error) {
     const message = `Remote upload gagal: ${error.message}`;
     result.warnings.push(message);
@@ -79,6 +82,7 @@ console.log(JSON.stringify({
   id: result.item.id,
   title: result.item.title,
   videoUrl: result.item.assets?.video?.url || "",
+  carouselSlides: result.item.assets?.carousels?.length || 0,
   warnings: result.warnings
 }, null, 2));
 
@@ -210,6 +214,82 @@ async function publishSocialsIfEnabled(result, options = {}) {
   }
 }
 
+async function publishCarouselIfEnabled(result) {
+  const targets = resolveCarouselPublishTargets();
+  if (!targets.length) return;
+  const item = result.item;
+  const imageUrls = carouselImageUrls(item);
+  if (imageUrls.length < 2) {
+    result.warnings.push("Carousel publish dilewati: minimal 2 URL gambar publik belum tersedia.");
+    return;
+  }
+
+  const published = { errors: {} };
+  const options = {
+    imageUrls,
+    title: item.title,
+    description: socialDescription(item)
+  };
+  if (targets.includes("instagram")) {
+    try {
+      published.instagram = await publishCarouselToInstagram(options);
+    } catch (error) {
+      published.errors.instagram = error.message;
+    }
+  }
+  if (targets.includes("facebook")) {
+    try {
+      published.facebook = await publishCarouselToFacebook(options);
+    } catch (error) {
+      published.errors.facebook = error.message;
+    }
+  }
+  if (targets.includes("tiktok")) {
+    try {
+      published.tiktok = await publishCarouselToTikTok(options);
+    } catch (error) {
+      published.errors.tiktok = error.message;
+    }
+  }
+
+  const publishedAt = new Date().toISOString();
+  item.publish = {
+    ...(item.publish || {}),
+    carouselPolicy: {
+      mode: carouselPublishTargetMode(),
+      targets
+    },
+    carousel: {
+      ...(item.publish?.carousel || {})
+    }
+  };
+  if (published.instagram) item.publish.carousel.instagram = { ...published.instagram, publishedAt };
+  if (published.facebook) item.publish.carousel.facebook = { ...published.facebook, publishedAt };
+  if (published.tiktok) item.publish.carousel.tiktok = { ...published.tiktok, publishedAt };
+  if (Object.keys(published.errors).length) {
+    item.publish.carouselErrors = {
+      ...(item.publish.carouselErrors || {}),
+      ...published.errors
+    };
+    for (const [platform, message] of Object.entries(published.errors)) {
+      result.warnings.push(`${platform} carousel publish gagal: ${message}`);
+    }
+  }
+
+  await saveItem(item);
+  await mergeMemoryItems([item]);
+  if (remoteEnabled()) {
+    try {
+      await uploadGeneratedStateAndAssets({ item });
+    } catch (error) {
+      const message = `Remote state setelah publish carousel gagal: ${error.message}`;
+      result.warnings.push(message);
+      console.warn(message);
+    }
+  }
+  console.log(`Carousel publish complete: ${carouselPublishSummary(published)}`);
+}
+
 async function dailyGenerationLimitReached() {
   if (!dailyGenerateLimit) return false;
   const [items, workflowCount] = await Promise.all([
@@ -267,6 +347,12 @@ function publishTargetMode() {
     .toLowerCase();
 }
 
+function carouselPublishTargetMode() {
+  return String(process.env.BANYAKTAU_CAROUSEL_PUBLISH_TARGETS || "none")
+    .trim()
+    .toLowerCase();
+}
+
 function resolvePublishTargets(options = {}) {
   if (options.tiktokOnly) return config.tiktok.enabled ? ["tiktok"] : [];
   const enabled = enabledPublishTargets();
@@ -290,6 +376,35 @@ function enabledPublishTargets() {
   if (config.instagram.enabled) targets.push("instagram");
   if (config.facebook.enabled) targets.push("facebook");
   return targets;
+}
+
+function resolveCarouselPublishTargets() {
+  const enabled = enabledCarouselTargets();
+  const mode = carouselPublishTargetMode();
+  if (!enabled.length || ["none", "off", "false", "0", ""].includes(mode)) return [];
+  if (mode === "all") return enabled;
+  if (mode === "auto" || mode === "single" || mode === "one") return enabled.slice(0, 1);
+
+  const requested = mode
+    .split(/[\s,]+/)
+    .map((target) => target.trim())
+    .filter(Boolean);
+  return requested.filter((target) => enabled.includes(target));
+}
+
+function enabledCarouselTargets() {
+  const targets = [];
+  if (config.instagram.enabled) targets.push("instagram");
+  if (config.facebook.enabled) targets.push("facebook");
+  if (config.tiktok.enabled) targets.push("tiktok");
+  return targets;
+}
+
+function carouselImageUrls(item) {
+  return (item.assets?.carousels || [])
+    .filter((asset) => asset?.url)
+    .sort((a, b) => Number(a.slideIndex || 0) - Number(b.slideIndex || 0))
+    .map((asset) => asset.url);
 }
 
 async function youtubeDailyLimitReached() {
@@ -380,6 +495,15 @@ function publishSummary(published) {
   if (published.youtube) rows.push(`youtube=${published.youtube.url || published.youtube.videoId || "ok"}`);
   if (published.facebook) rows.push(`facebook=${published.facebook.url || published.facebook.videoId || "ok"}`);
   if (published.instagram) rows.push(`instagram=${published.instagram.url || published.instagram.mediaId || "ok"}`);
+  if (published.tiktok) rows.push(`tiktok=${published.tiktok.publishId || published.tiktok.mode || "ok"}`);
+  if (Object.keys(published.errors || {}).length) rows.push(`errors=${Object.keys(published.errors).join(",")}`);
+  return rows.join(" ") || "skipped";
+}
+
+function carouselPublishSummary(published) {
+  const rows = [];
+  if (published.instagram) rows.push(`instagram=${published.instagram.url || published.instagram.mediaId || "ok"}`);
+  if (published.facebook) rows.push(`facebook=${published.facebook.url || published.facebook.postId || "ok"}`);
   if (published.tiktok) rows.push(`tiktok=${published.tiktok.publishId || published.tiktok.mode || "ok"}`);
   if (Object.keys(published.errors || {}).length) rows.push(`errors=${Object.keys(published.errors).join(",")}`);
   return rows.join(" ") || "skipped";

@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
+import { generateCarouselAssets } from "./carousel-concept.js";
 import { config } from "./config.js";
-import { estimateTtsUsd } from "./cost.js";
+import { estimateImageUsd, estimateTtsUsd } from "./cost.js";
 import { generateElevenLabsSpeech } from "./elevenlabs.js";
 import { generateOpenAiSpeech, generateSceneImage, transcribeSpeechSegments } from "./openai.js";
 import { renderKnowledgeVideo } from "./render.js";
@@ -36,6 +37,7 @@ export async function generateFullItem(input = {}, options = {}) {
     warnings.push("Clip video AI dimatikan agar biaya hemat. Render memakai gambar + TTS saja.");
   }
   await renderAndPersist(item);
+  await ensureCarousel(item, { warnings });
   return { item, warnings };
 }
 
@@ -130,6 +132,19 @@ export async function ensureThumbnail(item, options = {}) {
   }
 }
 
+export async function ensureCarousel(item, options = {}) {
+  const warnings = options.warnings || [];
+  try {
+    await generateCarouselAssets(item, { warnings, strict: Boolean(options.strict) });
+    updateCarouselCost(item);
+    item.updatedAt = nowIso();
+    await saveItem(item);
+  } catch (error) {
+    if (options.strict) throw error;
+    warnings.push(`Carousel gagal: ${error.message}`);
+  }
+}
+
 export async function renderAndPersist(item) {
   assertReadyToRender(item);
   item.assets.video = await renderKnowledgeVideo(item);
@@ -192,6 +207,20 @@ function updateTotalCost(item) {
     + Number(item.cost.ttsUsd || 0)
     + Number(item.cost.videoUsd || 0)
   ).toFixed(5));
+}
+
+function updateCarouselCost(item) {
+  const slideCount = Number(item.carousel?.slideCount || item.assets?.carousels?.length || 0);
+  const imageUnitUsd = Number(item.cost?.imageUnitUsd || estimateImageUsd(item.input?.imageSize || config.openai.imageSize, item.input?.imageQuality || config.openai.imageQuality));
+  const previousCarouselUsd = Number(item.cost?.carouselImageUsd || 0);
+  const currentImageUsd = Number(item.cost?.imageUsd || 0);
+  const sceneImageUsd = Number(item.cost?.sceneImageUsd || Math.max(0, currentImageUsd - previousCarouselUsd));
+  const carouselImageUsd = Number((slideCount * imageUnitUsd).toFixed(5));
+
+  item.cost.sceneImageUsd = Number(sceneImageUsd.toFixed(5));
+  item.cost.carouselImageUsd = carouselImageUsd;
+  item.cost.imageUsd = Number((item.cost.sceneImageUsd + carouselImageUsd).toFixed(5));
+  updateTotalCost(item);
 }
 
 function sortByScene(items) {

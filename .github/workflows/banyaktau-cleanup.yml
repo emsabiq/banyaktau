@@ -52,7 +52,7 @@ jobs:
       BANYAKTAU_CLEANUP_DAYS: ${{ github.event.inputs.days || secrets.BANYAKTAU_CLEANUP_DAYS || '7' }}
       BANYAKTAU_CLEANUP_DELETE_ALL: ${{ github.event.inputs.delete_all || 'false' }}
       BANYAKTAU_CLEANUP_DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
-      BANYAKTAU_CLEANUP_SUBDIRS: ${{ github.event.inputs.subdirs || secrets.BANYAKTAU_CLEANUP_SUBDIRS || 'videos,thumbnails,images,audio,clips' }}
+      BANYAKTAU_CLEANUP_SUBDIRS: ${{ github.event.inputs.subdirs || secrets.BANYAKTAU_CLEANUP_SUBDIRS || 'videos,thumbnails,images,carousels,audio,clips' }}
 
     steps:
       - uses: actions/checkout@v5

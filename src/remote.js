@@ -52,6 +52,7 @@ export async function uploadGeneratedStateAndAssets(options = {}) {
       await uploadDir(client, paths.videoDir, "videos");
       await uploadDir(client, paths.thumbnailDir, "thumbnails");
       await uploadDir(client, paths.imageDir, "images");
+      await uploadDir(client, paths.carouselDir, "carousels");
       await uploadDir(client, paths.audioDir, "audio");
     }
     await uploadJsonFile(client, path.join(paths.dataDir, "items.json"), "state/items.json");
@@ -77,6 +78,7 @@ export function absolutizeGeneratedUrls(item) {
       audio: withUrl(item.assets?.audio),
       thumbnail: withUrl(item.assets?.thumbnail),
       images: (item.assets?.images || []).map(withUrl),
+      carousels: (item.assets?.carousels || []).map(withUrl),
       clips: (item.assets?.clips || []).map(withUrl)
     }
   };
@@ -117,6 +119,7 @@ async function uploadItemAssets(client, item) {
     item.assets?.thumbnail,
     item.assets?.audio,
     ...(item.assets?.images || []),
+    ...(item.assets?.carousels || []),
     ...(item.assets?.clips || [])
   ].filter((asset) => asset?.path && asset?.url);
 
@@ -138,7 +141,7 @@ function remotePathFromAssetUrl(value) {
     const pathname = decodeURIComponent(url.pathname).replace(/^\/+/, "");
     const generatedIndex = pathname.indexOf("generated/");
     if (generatedIndex >= 0) return pathname.slice(generatedIndex + "generated/".length);
-    const known = pathname.match(/(?:^|\/)(videos|thumbnails|images|audio|clips)\/[^/]+$/);
+    const known = pathname.match(/(?:^|\/)(videos|thumbnails|images|carousels|audio|clips)\/[^/]+$/);
     return known ? known[0].replace(/^\/+/, "") : "";
   } catch {
     return "";

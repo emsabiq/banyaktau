@@ -66,9 +66,10 @@ export default async function handler(req, res) {
 
   const items = await readRemoteItems();
   checks.push(check("STATE_ITEMS", Array.isArray(items), `${items.length || 0} item terbaca.`));
-  const latest = items.find((item) => item.assets?.video?.url || item.assets?.images?.length);
+  const latest = items.find((item) => item.assets?.video?.url || item.assets?.images?.length || item.assets?.carousels?.length);
   if (latest?.assets?.video?.url) checks.push(await checkUrl("LATEST_VIDEO", latest.assets.video.url, false));
   if (latest?.assets?.thumbnail?.url) checks.push(await checkUrl("LATEST_THUMBNAIL", latest.assets.thumbnail.url, false));
+  if (latest?.assets?.carousels?.[0]?.url) checks.push(await checkUrl("LATEST_CAROUSEL", latest.assets.carousels[0].url, false));
 
   const failedRequired = checks.filter((entry) => !entry.ok && entry.required !== false);
   const warnings = checks.filter((entry) => !entry.ok && entry.required === false);

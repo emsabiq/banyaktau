@@ -606,6 +606,7 @@ export async function createKnowledgeDraft(rawInput, context = {}) {
     plan: normalized,
     assets: {
       images: [],
+      carousels: [],
       clips: [],
       audio: null,
       video: null

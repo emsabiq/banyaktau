@@ -9,16 +9,18 @@
     "start": "node src/server.js",
     "preflight": "node src/preflight.js",
     "run:once": "node src/run-once.js",
+    "carousel:publish": "node src/publish-carousel-once.js",
     "remote:cleanup": "node src/cleanup-remote.js",
     "remote:cleanup:dry": "node src/cleanup-remote.js --dry-run",
     "tiktok:auth-url": "node src/tiktok-auth-url.js",
     "tiktok:token": "node src/tiktok-token-fastcheck.js --persist-local",
-    "check": "node --check src/server.js && node --check src/story-engine.js && node --check src/render.js && node --check src/openai.js && node --check src/elevenlabs.js && node --check src/video-provider.js && node --check src/facebook.js && node --check src/youtube-publisher.js && node --check src/tiktok.js && node --check src/tiktok-auth-url.js && node --check src/tiktok-token-fastcheck.js && node --check src/pipeline.js && node --check src/remote.js && node --check src/run-once.js && node --check src/preflight.js && node --check src/thumbnail.js && node --check src/cleanup-remote.js && node --check public/app.js"
+    "check": "node --check src/server.js && node --check src/story-engine.js && node --check src/render.js && node --check src/openai.js && node --check src/elevenlabs.js && node --check src/video-provider.js && node --check src/facebook.js && node --check src/youtube-publisher.js && node --check src/tiktok.js && node --check src/tiktok-auth-url.js && node --check src/tiktok-token-fastcheck.js && node --check src/pipeline.js && node --check src/carousel-concept.js && node --check src/publish-carousel-once.js && node --check src/remote.js && node --check src/run-once.js && node --check src/preflight.js && node --check src/thumbnail.js && node --check src/cleanup-remote.js && node --check public/app.js"
   },
   "dependencies": {
     "basic-ftp": "^5.3.1",
     "dotenv": "^16.4.7",
     "express": "^5.2.1",
+    "pureimage": "^0.4.18",
     "ssh2-sftp-client": "^12.1.1"
   }
 }

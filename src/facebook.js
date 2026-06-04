@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { config } from "./config.js";
 
 function clean(value) {
@@ -52,6 +54,23 @@ function assertInstagramVideo({ videoUrl, durationSec }) {
       `${config.instagram.maxDurationSec} detik. Turunkan durasi video atau ubah INSTAGRAM_MAX_DURATION_SECONDS jika akun mendukung.`
     );
   }
+}
+
+function assertInstagramCarousel({ imageUrls }) {
+  const missing = [];
+  if (!config.instagram.enabled) missing.push("INSTAGRAM_UPLOAD_ENABLED=true");
+  if (!Array.isArray(imageUrls) || imageUrls.length < 2) missing.push("minimal 2 public carousel image URLs");
+  if (missing.length) throw new Error(`Config Instagram carousel belum lengkap: ${missing.join(", ")}`);
+}
+
+function assertFacebookCarousel({ imageUrls, imagePaths }) {
+  const missing = [];
+  if (!config.facebook.enabled) missing.push("FACEBOOK_UPLOAD_ENABLED=true");
+  const urlCount = Array.isArray(imageUrls) ? imageUrls.length : 0;
+  const pathCount = Array.isArray(imagePaths) ? imagePaths.length : 0;
+  if (Math.max(urlCount, pathCount) < 2) missing.push("minimal 2 carousel images");
+  if (missing.length) throw new Error(`Config Facebook carousel belum lengkap: ${missing.join(", ")}`);
+  assertFacebookConfig();
 }
 
 async function fetchJson(url, options = {}) {
@@ -234,6 +253,39 @@ async function createInstagramReelContainer({ token, igUserId, videoUrl, caption
   return containerId;
 }
 
+async function createInstagramCarouselImageContainer({ token, igUserId, imageUrl }) {
+  const body = new URLSearchParams({
+    access_token: token,
+    image_url: imageUrl,
+    is_carousel_item: "true"
+  });
+  const data = await fetchJson(graphUrl(`${igUserId}/media`), {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body
+  });
+  const containerId = clean(data.id);
+  if (!containerId) throw new Error(`Instagram tidak mengembalikan child carousel id: ${JSON.stringify(data).slice(0, 500)}`);
+  return containerId;
+}
+
+async function createInstagramCarouselContainer({ token, igUserId, childIds, caption }) {
+  const body = new URLSearchParams({
+    access_token: token,
+    media_type: "CAROUSEL",
+    children: childIds.join(","),
+    caption: normalizeDescription(caption)
+  });
+  const data = await fetchJson(graphUrl(`${igUserId}/media`), {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body
+  });
+  const containerId = clean(data.id);
+  if (!containerId) throw new Error(`Instagram tidak mengembalikan parent carousel id: ${JSON.stringify(data).slice(0, 500)}`);
+  return containerId;
+}
+
 async function getInstagramContainerStatus({ token, containerId }) {
   const url = new URL(graphUrl(containerId));
   url.searchParams.set("fields", "id,status_code,status");
@@ -308,6 +360,36 @@ export async function publishToInstagram({ videoUrl, title, description, coverUr
   };
 }
 
+export async function publishCarouselToInstagram({ imageUrls, title, description }) {
+  assertInstagramCarousel({ imageUrls });
+  const pageToken = await resolveOptionalPageAccessToken();
+  const token = resolveInstagramAccessToken(pageToken);
+  if (!token) throw new Error("INSTAGRAM_ACCESS_TOKEN belum diisi.");
+
+  const igUserId = await resolveInstagramUserId(token);
+  const caption = normalizeDescription(description || title);
+  const urls = imageUrls.slice(0, 10);
+  const childIds = [];
+  for (const imageUrl of urls) {
+    const childId = await createInstagramCarouselImageContainer({ token, igUserId, imageUrl });
+    await waitForInstagramContainer({ token, containerId: childId });
+    childIds.push(childId);
+  }
+  const containerId = await createInstagramCarouselContainer({ token, igUserId, childIds, caption });
+  await waitForInstagramContainer({ token, containerId });
+  const mediaId = await publishInstagramContainer({ token, igUserId, containerId });
+  const url = await resolveInstagramPermalink({ token, mediaId });
+  return {
+    ok: Boolean(mediaId),
+    type: "instagram_carousel",
+    mediaId,
+    containerId,
+    childIds,
+    igUserId,
+    url
+  };
+}
+
 export async function publishToFacebook({ videoUrl, title, description }) {
   assertFacebookConfig();
   if (!videoUrl) throw new Error("Facebook butuh public video URL.");
@@ -325,6 +407,77 @@ export async function publishToFacebook({ videoUrl, title, description }) {
     const fallback = await publishFacebookPageVideo({ token, videoUrl, title, description });
     return { ...fallback, fallbackFrom: "facebook_reel" };
   }
+}
+
+async function createFacebookUnpublishedPhoto({ token, imageUrl, imagePath, caption }) {
+  let data;
+  if (imagePath) {
+    const buffer = await fs.readFile(imagePath);
+    const form = new FormData();
+    form.set("access_token", token);
+    form.set("caption", normalizeDescription(caption));
+    form.set("published", "false");
+    form.set("source", new Blob([buffer], { type: "image/jpeg" }), path.basename(imagePath));
+    data = await fetchJson(graphUrl(`${config.facebook.pageId}/photos`), {
+      method: "POST",
+      body: form
+    });
+  } else {
+    const body = new URLSearchParams({
+      access_token: token,
+      url: imageUrl,
+      caption: normalizeDescription(caption),
+      published: "false"
+    });
+    data = await fetchJson(graphUrl(`${config.facebook.pageId}/photos`), {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body
+    });
+  }
+  const photoId = clean(data.id);
+  if (!photoId) throw new Error(`Facebook tidak mengembalikan photo id: ${JSON.stringify(data).slice(0, 500)}`);
+  return photoId;
+}
+
+export async function publishCarouselToFacebook({ imageUrls = [], imagePaths = [], title, description }) {
+  assertFacebookCarousel({ imageUrls, imagePaths });
+  const token = await resolvePageAccessToken();
+  const caption = normalizeDescription(description || title);
+  const urls = imageUrls.slice(0, 10);
+  const paths = imagePaths.slice(0, 10);
+  const count = Math.max(urls.length, paths.length);
+  const photoIds = [];
+  for (let index = 0; index < count; index += 1) {
+    photoIds.push(await createFacebookUnpublishedPhoto({
+      token,
+      imageUrl: urls[index],
+      imagePath: paths[index],
+      caption: title
+    }));
+  }
+
+  const body = new URLSearchParams({
+    access_token: token,
+    message: caption
+  });
+  photoIds.forEach((photoId, index) => {
+    body.set(`attached_media[${index}]`, JSON.stringify({ media_fbid: photoId }));
+  });
+
+  const data = await fetchJson(graphUrl(`${config.facebook.pageId}/feed`), {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body
+  });
+  const postId = clean(data.id);
+  return {
+    ok: Boolean(postId),
+    type: "facebook_photo_carousel",
+    postId,
+    photoIds,
+    url: postId ? `https://www.facebook.com/${postId}` : ""
+  };
 }
 
 export async function publishToSocials(options) {

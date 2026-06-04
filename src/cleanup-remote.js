@@ -5,7 +5,7 @@ import { compactMemoryItem } from "./storage.js";
 import { remoteConfig, remoteEnabled, withRemoteClient } from "./remote.js";
 
 const defaultRetentionDays = 7;
-const defaultSubdirs = ["videos", "thumbnails", "images", "audio", "clips"];
+const defaultSubdirs = ["videos", "thumbnails", "images", "carousels", "audio", "clips"];
 
 function argValue(name, fallback = "") {
   const index = process.argv.indexOf(name);

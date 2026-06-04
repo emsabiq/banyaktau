@@ -78,6 +78,8 @@ const els = {
   copyYoutubeBtn: document.querySelector("#copyYoutubeBtn"),
   sceneGrid: document.querySelector("#sceneGrid"),
   assetStatus: document.querySelector("#assetStatus"),
+  carouselStatus: document.querySelector("#carouselStatus"),
+  carouselGrid: document.querySelector("#carouselGrid"),
   providerStatus: document.querySelector("#providerStatus"),
   selectedIdea: document.querySelector("#selectedIdea"),
   ideaMeta: document.querySelector("#ideaMeta"),
@@ -303,13 +305,13 @@ async function generateFull() {
     await refreshItems();
     if (data.queued) {
       setLocalStage("workflow", "Workflow berjalan. Progress live dibaca dari GitHub Actions...");
-      setStatus(statusWithWarnings("Workflow GitHub Actions dimulai. Mode hemat: gambar + TTS tanpa clip video AI.", data.warnings));
+      setStatus(statusWithWarnings("Workflow GitHub Actions dimulai. Mode hemat: gambar + TTS + carousel tanpa clip video AI.", data.warnings));
       showWorkspaceTab("console");
       await refreshItems().catch(() => {});
       startResultPolling(previousLatestId);
     } else {
       setStatus(statusWithWarnings(
-        "Video final selesai dibuat dari gambar + TTS tanpa clip video AI.",
+        "Video final dan carousel selesai dibuat dari gambar + TTS tanpa clip video AI.",
         data.warnings
       ));
       finishProcess("Video final selesai.");
@@ -336,8 +338,8 @@ function startResultPolling(previousLatestId) {
         state.current = latest;
         window.clearInterval(state.pollTimer);
         state.pollTimer = 0;
-        setStatus("Video baru sudah muncul di dashboard.");
-        finishProcess("Video selesai dan state upload terbaca.");
+        setStatus("Video baru dan carousel sudah muncul di dashboard.");
+        finishProcess("Video dan carousel selesai, state upload terbaca.");
       } else if (attempts >= 60) {
         window.clearInterval(state.pollTimer);
         state.pollTimer = 0;
@@ -611,6 +613,7 @@ function localWorkflowSteps() {
   const imageReady = item && (item.assets?.images?.length || 0) >= (item.plan?.scenes?.length || 1);
   const ttsReady = Boolean(item?.assets?.audio?.path || item?.assets?.audio?.url);
   const renderReady = Boolean(item?.assets?.video?.url);
+  const carouselReady = Boolean(item && carouselAssets(item).length >= (item.carousel?.slideCount || 1));
   const uploadReady = Boolean(renderReady && item?.assets?.video?.url);
   const publishReady = publishSuccess(item);
   const stage = state.processStartedAt ? state.localStage : "";
@@ -621,6 +624,7 @@ function localWorkflowSteps() {
     { label: "Gambar", state: stepState(false, stage === "images" || Boolean(item && !imageReady), Boolean(imageReady)), detail: item ? `${item.assets?.images?.length || 0}/${item.plan?.scenes?.length || 0}` : "Menunggu" },
     { label: "TTS", state: stepState(false, stage === "tts" || Boolean(imageReady && !ttsReady), Boolean(ttsReady)), detail: item?.assets?.audio?.provider || "Menunggu" },
     { label: "Render", state: stepState(false, stage === "render" || Boolean(ttsReady && !renderReady), Boolean(renderReady)), detail: stage === "render" ? state.localStageDetail : renderReady ? "Final siap" : "Gambar ke video" },
+    { label: "Carousel", state: stepState(false, stage === "carousel" || Boolean(renderReady && !carouselReady), Boolean(carouselReady)), detail: carouselReady ? `${carouselAssets(item).length} slide` : "4:5 otomatis" },
     { label: "Upload", state: stepState(false, stage === "upload" || Boolean(renderReady && !uploadReady), Boolean(uploadReady)), detail: uploadReady ? "Asset publik" : "Menunggu" },
     { label: "Publish", state: stepState(false, stage === "publish" || Boolean(uploadReady && !publishReady), Boolean(publishReady)), detail: publishReady ? "Terkirim" : "Opsional" }
   ];
@@ -720,31 +724,55 @@ function renderList() {
 }
 
 function renderGallery() {
-  const videos = state.items.filter((item) => item.assets?.video?.url);
+  const galleryItems = state.items.filter((item) => item.assets?.video?.url || carouselAssets(item).length);
   if (!els.galleryGrid) return;
-  if (!videos.length) {
-    els.galleryGrid.innerHTML = `<div class="empty-gallery">Belum ada video final. Generate video dulu, nanti muncul di sini.</div>`;
+  if (!galleryItems.length) {
+    els.galleryGrid.innerHTML = `<div class="empty-gallery">Belum ada video atau carousel final. Generate video dulu, nanti muncul di sini.</div>`;
     if (els.galleryMoreBtn) els.galleryMoreBtn.hidden = true;
     return;
   }
-  const visibleVideos = state.galleryExpanded ? videos : videos.slice(0, 6);
-  els.galleryGrid.innerHTML = visibleVideos.map((item) => `
+  const visibleItems = state.galleryExpanded ? galleryItems : galleryItems.slice(0, 6);
+  els.galleryGrid.innerHTML = visibleItems.map((item) => {
+    const carousels = carouselAssets(item);
+    const firstCarousel = carousels[0];
+    const media = item.assets?.video?.url
+      ? `<video controls playsinline preload="metadata" src="${item.assets.video.url}"></video>`
+      : firstCarousel?.url ? `<img class="gallery-carousel-thumb" src="${firstCarousel.url}" alt="Carousel ${escapeHtml(item.title)}">` : "";
+    const duration = item.assets?.video?.durationSec ? `${formatDuration(item.assets.video.durationSec)} - ` : "";
+    return `
     <article class="gallery-card">
-      <video controls playsinline preload="metadata" src="${item.assets.video.url}"></video>
+      ${media}
       <div class="gallery-body">
         <strong>${escapeHtml(item.title)}</strong>
-        <span>${formatDuration(item.assets.video.durationSec)} - ${new Date(item.updatedAt || item.createdAt).toLocaleString("id-ID")}</span>
+        <span>${duration}${carousels.length ? `${carousels.length} carousel - ` : ""}${new Date(item.updatedAt || item.createdAt).toLocaleString("id-ID")}</span>
         <div class="gallery-actions">
-          <button type="button" class="mini-action" data-download-video="${item.id}">Download</button>
+          ${item.assets?.video?.url ? `<button type="button" class="mini-action" data-download-video="${item.id}">Download</button>` : ""}
+          ${firstCarousel?.url ? `<button type="button" class="mini-action" data-download-carousel="${item.id}" data-slide="${firstCarousel.slideIndex}">Carousel</button>` : ""}
+          ${firstCarousel?.url ? `<button type="button" class="mini-action" data-copy-carousel="${item.id}">Copy Carousel</button>` : ""}
           <button type="button" class="mini-action" data-copy-youtube="${item.id}">Copy Caption</button>
         </div>
       </div>
     </article>
-  `).join("");
+  `;
+  }).join("");
   els.galleryGrid.querySelectorAll("[data-download-video]").forEach((button) => {
     button.addEventListener("click", () => {
       const item = state.items.find((entry) => entry.id === button.dataset.downloadVideo);
       downloadVideo(item);
+    });
+  });
+  els.galleryGrid.querySelectorAll("[data-download-carousel]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const item = state.items.find((entry) => entry.id === button.dataset.downloadCarousel);
+      const asset = carouselAssets(item).find((entry) => String(entry.slideIndex) === String(button.dataset.slide));
+      downloadCarouselSlide(item, asset);
+    });
+  });
+  els.galleryGrid.querySelectorAll("[data-copy-carousel]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const item = state.items.find((entry) => entry.id === button.dataset.copyCarousel);
+      await copyText(carouselCopy(item));
+      setStatus("Link carousel disalin.");
     });
   });
   els.galleryGrid.querySelectorAll("[data-copy-youtube]").forEach((button) => {
@@ -755,8 +783,8 @@ function renderGallery() {
     });
   });
   if (els.galleryMoreBtn) {
-    els.galleryMoreBtn.hidden = videos.length <= 6;
-    els.galleryMoreBtn.textContent = state.galleryExpanded ? "Show Less" : `Show More (${videos.length - 6})`;
+    els.galleryMoreBtn.hidden = galleryItems.length <= 6;
+    els.galleryMoreBtn.textContent = state.galleryExpanded ? "Show Less" : `Show More (${galleryItems.length - 6})`;
   }
 }
 
@@ -847,6 +875,7 @@ function renderCurrent() {
     els.pointList.innerHTML = "";
     els.factNote.textContent = "-";
     els.sceneGrid.innerHTML = "";
+    renderCarouselPreview(null);
     els.videoSlot.textContent = "Video belum dirender";
     if (els.thumbnailSlot) els.thumbnailSlot.textContent = "Thumbnail belum tersedia";
     els.assetStatus.textContent = "Alur: Generate Ide -> Buat Storyboard -> Generate Video Final";
@@ -868,9 +897,10 @@ function renderCurrent() {
   els.totalMetric.textContent = formatUsd(item.cost.totalUsd);
 
   const imageCount = item.assets.images?.length || 0;
+  const carouselCount = carouselAssets(item).length;
   const audio = item.assets.audio?.provider ? `Audio: ${item.assets.audio.provider}` : "Audio: belum";
   const final = item.assets.video?.url ? "Final: siap" : "Final: belum";
-  els.assetStatus.textContent = `Img ${imageCount}/${item.plan.scenes.length} - Clip AI mati - ${audio} - ${final}`;
+  els.assetStatus.textContent = `Img ${imageCount}/${item.plan.scenes.length} - Carousel ${carouselCount}/${item.carousel?.slideCount || 0} - Clip AI mati - ${audio} - ${final}`;
 
   const thumb = thumbnailUrl(item);
   if (els.thumbnailSlot) {
@@ -898,6 +928,49 @@ function renderCurrent() {
       </article>
     `;
   }).join("");
+  renderCarouselPreview(item);
+}
+
+function renderCarouselPreview(item) {
+  if (!els.carouselGrid) return;
+  const slides = carouselAssets(item);
+  const total = item?.carousel?.slideCount || slides.length || 0;
+  if (els.carouselStatus) {
+    els.carouselStatus.textContent = slides.length
+      ? `${slides.length}/${total} slide siap`
+      : "Belum ada carousel";
+  }
+  if (!slides.length) {
+    els.carouselGrid.innerHTML = `<div class="empty-gallery">Carousel dibuat otomatis setelah generate video selesai.</div>`;
+    return;
+  }
+
+  els.carouselGrid.innerHTML = slides.map((asset) => `
+    <article class="carousel-card">
+      <img src="${asset.url}" alt="Carousel slide ${asset.slideIndex}">
+      <div class="scene-body">
+        <small>Slide ${asset.slideIndex}/${total}</small>
+        <div class="gallery-actions">
+          <button type="button" class="mini-action" data-current-carousel-download="${asset.slideIndex}">Download</button>
+          <button type="button" class="mini-action" data-current-carousel-copy="${asset.slideIndex}">Copy Link</button>
+        </div>
+      </div>
+    </article>
+  `).join("");
+
+  els.carouselGrid.querySelectorAll("[data-current-carousel-download]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const asset = slides.find((entry) => String(entry.slideIndex) === String(button.dataset.currentCarouselDownload));
+      downloadCarouselSlide(item, asset);
+    });
+  });
+  els.carouselGrid.querySelectorAll("[data-current-carousel-copy]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const asset = slides.find((entry) => String(entry.slideIndex) === String(button.dataset.currentCarouselCopy));
+      await copyText(absoluteUrl(asset?.url || ""));
+      setStatus("Link slide carousel disalin.");
+    });
+  });
 }
 
 function renderYoutubeCopy(item) {
@@ -918,6 +991,31 @@ async function copyVideoLink(item) {
   if (!url) return;
   await copyText(absoluteUrl(url));
   setStatus("Link video disalin.");
+}
+
+function carouselAssets(item) {
+  return (item?.assets?.carousels || [])
+    .filter((asset) => asset?.url)
+    .sort((a, b) => Number(a.slideIndex || 0) - Number(b.slideIndex || 0));
+}
+
+function carouselCopy(item) {
+  return carouselAssets(item)
+    .map((asset) => `Slide ${asset.slideIndex}: ${absoluteUrl(asset.url)}`)
+    .join("\n");
+}
+
+function downloadCarouselSlide(item, asset) {
+  if (!asset?.url) return;
+  const link = document.createElement("a");
+  link.href = absoluteUrl(asset.url);
+  link.download = `${slugify(item?.title || item?.id || "banyaktau-carousel")}-slide-${String(asset.slideIndex || 1).padStart(2, "0")}.jpg`;
+  link.target = "_blank";
+  link.rel = "noreferrer";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setStatus(`Download carousel slide ${asset.slideIndex} dimulai.`);
 }
 
 async function downloadVideo(item) {

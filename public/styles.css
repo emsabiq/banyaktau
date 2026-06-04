@@ -103,6 +103,7 @@ button {
 .video-panel,
 .scene-card,
 .gallery-card,
+.carousel-card,
 .idea-card button {
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -1173,6 +1174,7 @@ p {
 
 .idea-list,
 .scene-grid,
+.carousel-grid,
 .gallery-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
@@ -1195,24 +1197,29 @@ p {
 }
 
 .idea-card span,
-.scene-card small {
+.scene-card small,
+.carousel-card small {
   color: var(--amber);
 }
 
 .idea-card strong,
-.scene-card strong {
+.scene-card strong,
+.carousel-card strong {
   color: var(--text);
   font-size: 15px;
   line-height: 1.25;
 }
 
 .scene-card,
-.gallery-card {
+.gallery-card,
+.carousel-card {
   overflow: hidden;
 }
 
 .scene-card img,
 .scene-card video,
+.carousel-card img,
+.gallery-carousel-thumb,
 .gallery-thumbnail,
 .gallery-card video {
   width: 100%;
@@ -1226,12 +1233,20 @@ p {
   aspect-ratio: 9 / 12;
 }
 
+.carousel-card img {
+  aspect-ratio: 4 / 5;
+}
+
 .gallery-card video {
   aspect-ratio: 9 / 12;
 }
 
 .gallery-thumbnail {
   aspect-ratio: 9 / 16;
+}
+
+.gallery-carousel-thumb {
+  aspect-ratio: 4 / 5;
 }
 
 .scene-body,
@@ -1365,6 +1380,7 @@ button:disabled {
   }
 
   .scene-grid,
+  .carousel-grid,
   .gallery-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
