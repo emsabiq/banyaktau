@@ -475,6 +475,7 @@ async function registerFirstFont(name, candidates) {
 function titleFontCandidates() {
   return [
     process.env.CAROUSEL_TITLE_FONT_FILE,
+    path.join(paths.publicDir, "assets", "fonts", "PlusJakartaSans-Bold.ttf"),
     path.join(paths.publicDir, "assets", "fonts", "scholar-regular.otf"),
     path.join(paths.publicDir, "assets", "fonts", "BebasNeue-Regular.otf"),
     "C:/Windows/Fonts/BebasNeue-Regular.otf",
@@ -487,6 +488,7 @@ function titleFontCandidates() {
 function bodyFontCandidates() {
   return [
     process.env.CAROUSEL_BODY_FONT_FILE,
+    path.join(paths.publicDir, "assets", "fonts", "PlusJakartaSans-Regular.ttf"),
     path.join(paths.publicDir, "assets", "fonts", "scholar-italic.otf"),
     "C:/Windows/Fonts/segoeui.ttf",
     "C:/Windows/Fonts/arial.ttf",
