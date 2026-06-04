@@ -473,6 +473,7 @@ function titleFontCandidates() {
 function bodyFontCandidates() {
   return [
     process.env.CAROUSEL_BODY_FONT_FILE,
+    path.join(paths.publicDir, "assets", "fonts", "PlusJakartaSans-Regular.ttf"),
     path.join(paths.publicDir, "assets", "fonts", "scholar-regular.otf")
   ];
 }
