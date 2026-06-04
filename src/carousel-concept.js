@@ -266,8 +266,7 @@ function drawTitleSlide(ctx, slide, fonts) {
     drawGoldText(ctx, row, targetW / 2, y, {
       fontFamily: fonts.title,
       fontSize: lines.fontSize,
-      align: "center",
-      strokeWidth: Math.max(5, Math.round(lines.fontSize * 0.045))
+      align: "center"
     });
     y += lineHeight;
   }
@@ -290,8 +289,7 @@ function drawContentSlide(ctx, slide, fonts) {
     drawGoldText(ctx, row, targetW / 2, y, {
       fontFamily: fonts.title,
       fontSize: title.fontSize,
-      align: "center",
-      strokeWidth: Math.max(4, Math.round(title.fontSize * 0.045))
+      align: "center"
     });
     y += titleLineHeight;
   }
@@ -346,21 +344,19 @@ function drawChrome(ctx, { pageText, titleFont }) {
     fontFamily: titleFont,
     fontSize: 35,
     align: "center",
-    fill: "#ffffff",
-    shadowColor: "rgba(0,0,0,0.42)"
+    fill: "#ffffff"
   });
 
   drawStrokeFillText(ctx, "BANYAKTAU", targetW - 66, 154, {
     fontFamily: titleFont,
     fontSize: 58,
     align: "right",
-    fill: "#ffffff",
-    shadowColor: "rgba(0,0,0,0.65)"
+    fill: "#ffffff"
   });
 }
 
 function drawGoldText(ctx, text, x, y, options) {
-  // Plain gold fill with a clean drop shadow
+  // Plain gold fill, no effects.
   drawStrokeFillText(ctx, text, x, y, {
     ...options,
     fill: "#eda51d"
@@ -374,14 +370,9 @@ function drawStrokeFillText(ctx, text, x, y, options) {
   ctx.textAlign = options.align || "center";
   ctx.textBaseline = "middle";
 
-  // Draw drop shadow instead of heavy outline stroke to avoid character distortion
-  if (options.shadow !== false) {
-    const shadowOffset = options.shadowOffset || Math.max(1, Math.round(fontSize * 0.035));
-    ctx.fillStyle = options.shadowColor || "rgba(0, 0, 0, 0.65)";
-    ctx.fillText(text, x + shadowOffset, y + shadowOffset);
-  }
-
-  // Plain fill (no stroke/outline)
+  // Plain single fill only: no stroke/outline, no drop shadow, no gradient.
+  // Letter counters (holes inside O, A, e, etc.) stay transparent thanks to
+  // the pureimage even-odd fill patch in scripts/patch-pureimage.js.
   ctx.fillStyle = options.fill || "#ffffff";
   ctx.fillText(text, x, y);
 }
@@ -475,8 +466,8 @@ async function registerFirstFont(name, candidates) {
 function titleFontCandidates() {
   return [
     process.env.CAROUSEL_TITLE_FONT_FILE,
-    path.join(paths.publicDir, "assets", "fonts", "PlusJakartaSans-Bold.ttf"),
     path.join(paths.publicDir, "assets", "fonts", "scholar-regular.otf"),
+    path.join(paths.publicDir, "assets", "fonts", "PlusJakartaSans-Bold.ttf"),
     path.join(paths.publicDir, "assets", "fonts", "BebasNeue-Regular.otf"),
     "C:/Windows/Fonts/BebasNeue-Regular.otf",
     "C:/Windows/Fonts/impact.ttf",
@@ -488,13 +479,13 @@ function titleFontCandidates() {
 function bodyFontCandidates() {
   return [
     process.env.CAROUSEL_BODY_FONT_FILE,
-    path.join(paths.publicDir, "assets", "fonts", "PlusJakartaSans-Bold.ttf"),
+    path.join(paths.publicDir, "assets", "fonts", "scholar-regular.otf"),
     path.join(paths.publicDir, "assets", "fonts", "scholar-italic.otf"),
+    path.join(paths.publicDir, "assets", "fonts", "PlusJakartaSans-Regular.ttf"),
+    path.join(paths.publicDir, "assets", "fonts", "PlusJakartaSans-Bold.ttf"),
     "C:/Windows/Fonts/segoeui.ttf",
     "C:/Windows/Fonts/arial.ttf",
-    "C:/Windows/Fonts/arialbi.ttf",
-    "C:/Windows/Fonts/arialbd.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
   ];
 }
