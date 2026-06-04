@@ -90,7 +90,7 @@ async function run() {
 
       function drawStrokeFillText(ctx, text, x, y, opts = {}) {
         const fill = opts.fill || "#FFD24D";
-        
+
         // Draw a clean, soft drop shadow instead of a heavy outline stroke
         if (opts.shadow !== false) {
           const shadowOffset = opts.shadowOffset || Math.max(1, Math.round(fontSize * 0.035));
