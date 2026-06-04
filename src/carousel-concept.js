@@ -302,20 +302,25 @@ function drawContentSlide(ctx, slide, fonts) {
     maxWidth: 970,
     maxLines: titleTotal > 180 ? 5 : 7,
     minFontSize: 38,
-    upper: true
+    upper: false
   });
   const bodyLineHeight = Math.round(body.fontSize * 1.12);
   let bodyY = y + 30;
 
   for (const row of body.rows) {
-    drawStrokeFillText(ctx, row, targetW / 2, bodyY, {
-      fontFamily: fonts.body,
-      fontSize: body.fontSize,
-      align: "center",
-      fill: "#fffdf7",
-      stroke: "rgba(0,0,0,0.78)",
-      strokeWidth: Math.max(2, Math.round(body.fontSize * 0.055))
-    });
+    ctx.font = `${body.fontSize}px '${fonts.body}'`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    // Soft drop shadow underneath body text
+    const sh = Math.max(1, Math.round(body.fontSize * 0.03));
+    ctx.fillStyle = "rgba(0,0,0,0.64)";
+    ctx.fillText(row, targetW / 2 + sh, bodyY + sh);
+
+    // Cream text fill (no stroke outline!)
+    ctx.fillStyle = "#fffdf7";
+    ctx.fillText(row, targetW / 2, bodyY);
+
     bodyY += bodyLineHeight;
   }
 }
@@ -359,24 +364,24 @@ function drawChrome(ctx, { pageText, titleFont }) {
     align: "right",
     fill: "#ffffff",
     stroke: "#000000",
-    strokeWidth: 5
+    strokeWidth: 2
   });
 }
 
 function drawGoldText(ctx, text, x, y, options) {
-  drawStrokeFillText(ctx, text, x, y, {
-    ...options,
-    fill: "#eda51d",
-    stroke: "#000000"
-  });
-
+  const shadowOffset = Math.max(2, Math.round(options.fontSize * 0.035));
   ctx.font = `${options.fontSize}px '${options.fontFamily}'`;
   ctx.textAlign = options.align || "center";
   ctx.textBaseline = "middle";
-  ctx.fillStyle = "rgba(255,225,116,0.72)";
-  ctx.fillText(text, x, y - Math.round(options.fontSize * 0.055));
-  ctx.fillStyle = "rgba(116,58,0,0.28)";
-  ctx.fillText(text, x, y + Math.round(options.fontSize * 0.05));
+  ctx.fillStyle = "rgba(0,0,0,0.54)";
+  ctx.fillText(text, x + shadowOffset, y + shadowOffset);
+
+  drawStrokeFillText(ctx, text, x, y, {
+    ...options,
+    fill: "#ffd54f",
+    stroke: "#000000",
+    strokeWidth: Math.max(2, Math.round(options.fontSize * 0.03))
+  });
 }
 
 function drawStrokeFillText(ctx, text, x, y, options) {
