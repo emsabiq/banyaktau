@@ -389,27 +389,33 @@ function drawStrokeFillText(ctx, text, x, y, options) {
 
 function fitTextLines(ctx, value, options) {
   let fontSize = Number(options.fontSize || 64);
-  const minFontSize = Number(options.minFontSize || 32);
+  const minFontSize = Math.min(Number(options.minFontSize || 32), 20); // allow scaling down to 20px
   const text = options.upper ? String(value || "").toUpperCase() : String(value || "");
   let rows = [];
 
   while (fontSize >= minFontSize) {
     ctx.font = `${fontSize}px '${options.fontFamily}'`;
-    rows = wrapText(ctx, text, options.maxWidth, options.maxLines);
+    rows = wrapText(ctx, text, options.maxWidth);
     const widest = Math.max(...rows.map((row) => ctx.measureText(row).width), 1);
     if (rows.length <= options.maxLines && widest <= options.maxWidth) break;
-    fontSize -= 4;
+    fontSize -= 2;
   }
 
-  rows = rows.slice(0, options.maxLines);
-  if (rows.length && didTruncate(text, rows)) {
-    rows[rows.length - 1] = trimToWidth(ctx, rows[rows.length - 1], options.maxWidth, "...");
+  // If it still doesn't fit within maxLines at minFontSize, try shrinking down to 14px
+  if (rows.length > options.maxLines && fontSize > 14) {
+    while (fontSize >= 14) {
+      ctx.font = `${fontSize}px '${options.fontFamily}'`;
+      rows = wrapText(ctx, text, options.maxWidth);
+      const widest = Math.max(...rows.map((row) => ctx.measureText(row).width), 1);
+      if (rows.length <= options.maxLines && widest <= options.maxWidth) break;
+      fontSize -= 1;
+    }
   }
 
   return { rows, fontSize };
 }
 
-function wrapText(ctx, value, maxWidth, maxLines) {
+function wrapText(ctx, value, maxWidth) {
   const words = String(value || "").split(/\s+/).filter(Boolean);
   const lines = [];
   let line = "";
@@ -419,26 +425,12 @@ function wrapText(ctx, value, maxWidth, maxLines) {
     if (ctx.measureText(next).width > maxWidth && line) {
       lines.push(line);
       line = word;
-      if (lines.length >= maxLines) break;
     } else {
       line = next;
     }
   }
-  if (line && lines.length < maxLines) lines.push(line);
+  if (line) lines.push(line);
   return lines.length ? lines : [String(value || "")];
-}
-
-function didTruncate(original, rows) {
-  const rendered = rows.join(" ").replace(/\.\.\.$/, "").trim();
-  return rendered.length + 3 < String(original || "").trim().length;
-}
-
-function trimToWidth(ctx, value, maxWidth, suffix) {
-  let text = String(value || "").trim();
-  while (text.length > 1 && ctx.measureText(`${text}${suffix}`).width > maxWidth) {
-    text = text.replace(/\s+\S*$/, "").trim() || text.slice(0, -1).trim();
-  }
-  return `${text}${suffix}`;
 }
 
 function drawCoverImage(ctx, img, width, height) {
@@ -484,23 +476,25 @@ async function registerFirstFont(name, candidates) {
 function titleFontCandidates() {
   return [
     process.env.CAROUSEL_TITLE_FONT_FILE,
+    path.join(paths.publicDir, "assets", "fonts", "scholar-regular.otf"),
     path.join(paths.publicDir, "assets", "fonts", "BebasNeue-Regular.otf"),
     "C:/Windows/Fonts/BebasNeue-Regular.otf",
     "C:/Windows/Fonts/impact.ttf",
     "C:/Windows/Fonts/arialbd.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf",
-    path.join(paths.publicDir, "assets", "fonts", "scholar-regular.otf")
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf"
   ];
 }
 
 function bodyFontCandidates() {
   return [
     process.env.CAROUSEL_BODY_FONT_FILE,
+    path.join(paths.publicDir, "assets", "fonts", "scholar-italic.otf"),
+    "C:/Windows/Fonts/segoeui.ttf",
+    "C:/Windows/Fonts/arial.ttf",
     "C:/Windows/Fonts/arialbi.ttf",
     "C:/Windows/Fonts/arialbd.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    path.join(paths.publicDir, "assets", "fonts", "scholar-italic.otf")
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
   ];
 }
 
