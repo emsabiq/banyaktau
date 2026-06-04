@@ -1,5 +1,8 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import os from "node:os";
+import path from "node:path";
 import { config } from "./config.js";
 
 const apiBaseUrl = "https://open.tiktokapis.com";
@@ -392,23 +395,102 @@ async function publishPhotosInbox({ imageUrls, title, description }) {
   };
 }
 
-export async function publishCarouselToTikTok({ imageUrls, title, description }) {
-  if (!Array.isArray(imageUrls) || imageUrls.length < 2) {
-    throw new Error("TikTok photo carousel butuh minimal 2 public image URLs.");
+async function publishCarouselAsSlideshowVideo({ imagePaths, title, description }) {
+  const slideshowPath = path.join(os.tmpdir(), `tiktok-slideshow-${Date.now()}.mp4`);
+  try {
+    await createSlideshowVideo(imagePaths, slideshowPath);
+    const result = await publishToTikTok({
+      videoPath: slideshowPath,
+      caption: description || title
+    });
+    return {
+      ...result,
+      type: "tiktok_carousel_slideshow_video",
+      warnings: ["Carousel dikonversi menjadi slideshow video karena domain belum terverifikasi di TikTok."]
+    };
+  } finally {
+    await fsp.unlink(slideshowPath).catch(() => {});
   }
+}
+
+async function createSlideshowVideo(imagePaths, outputPath) {
+  const tmpFile = path.join(os.tmpdir(), `banyaktau-slideshow-${Date.now()}.txt`);
+  let content = "";
+  for (const imgPath of imagePaths) {
+    const escapedPath = imgPath.replace(/\\/g, "/").replace(/'/g, "'\\''");
+    content += `file '${escapedPath}'\nduration 3.5\n`;
+  }
+  if (imagePaths.length > 0) {
+    const escapedPath = imagePaths[imagePaths.length - 1].replace(/\\/g, "/").replace(/'/g, "'\\''");
+    content += `file '${escapedPath}'\n`;
+  }
+
+  await fsp.writeFile(tmpFile, content, "utf8");
+
+  const args = [
+    "-y",
+    "-f", "concat",
+    "-safe", "0",
+    "-i", tmpFile,
+    "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(1080-iw)/2:(1920-ih)/2:black",
+    "-c:v", "libx264",
+    "-pix_fmt", "yuv420p",
+    "-r", "25",
+    outputPath
+  ];
+
+  const proc = spawnSync("ffmpeg", args, { encoding: "utf8" });
+  await fsp.unlink(tmpFile).catch(() => {});
+  if (proc.status !== 0) {
+    throw new Error(`FFmpeg slideshow render gagal: ${proc.stderr || proc.stdout}`);
+  }
+}
+
+export async function publishCarouselToTikTok({ imageUrls, imagePaths, title, description }) {
+  const hasLocalPaths = Array.isArray(imagePaths) && imagePaths.length >= 2;
+  const hasUrls = Array.isArray(imageUrls) && imageUrls.length >= 2;
+
+  if (!hasUrls) {
+    if (hasLocalPaths) {
+      console.warn("URL publik carousel belum siap, mencoba fallback slideshow video...");
+      return publishCarouselAsSlideshowVideo({ imagePaths, title, description });
+    }
+    throw new Error("TikTok photo carousel butuh minimal 2 public image URLs atau file lokal.");
+  }
+
   assertTikTokPublishConfig();
   const urls = imageUrls.slice(0, 35);
 
   if (config.tiktok.publishMode === "inbox") {
-    return publishPhotosInbox({ imageUrls: urls, title, description });
+    try {
+      return await publishPhotosInbox({ imageUrls: urls, title, description });
+    } catch (error) {
+      if (isUrlOwnershipError(error) && hasLocalPaths) {
+        console.warn(`TikTok inbox URL photo upload ditolak (${error.message}), coba fallback slideshow video...`);
+        return publishCarouselAsSlideshowVideo({ imagePaths, title, description });
+      }
+      throw error;
+    }
   }
 
   try {
     return await publishPhotosDirect({ imageUrls: urls, title, description });
   } catch (error) {
+    if (isUrlOwnershipError(error) && hasLocalPaths) {
+      console.warn(`TikTok direct URL photo upload ditolak (${error.message}), coba fallback slideshow video...`);
+      return publishCarouselAsSlideshowVideo({ imagePaths, title, description });
+    }
     if (isUnauditedDirectPostError(error)) {
       console.warn(`TikTok photo direct post dibatasi audit app, fallback ke inbox upload: ${error.message}`);
-      return publishPhotosInbox({ imageUrls: urls, title, description });
+      try {
+        return await publishPhotosInbox({ imageUrls: urls, title, description });
+      } catch (inboxError) {
+        if (isUrlOwnershipError(inboxError) && hasLocalPaths) {
+          console.warn(`TikTok inbox URL photo upload ditolak (${inboxError.message}), coba fallback slideshow video...`);
+          return publishCarouselAsSlideshowVideo({ imagePaths, title, description });
+        }
+        throw inboxError;
+      }
     }
     throw error;
   }

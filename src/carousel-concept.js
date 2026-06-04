@@ -106,14 +106,25 @@ export async function generateCarouselAssets(item, options = {}) {
   item.carousel = carousel;
 
   for (const slide of carousel.slides) {
-    const existing = currentAssets.find((asset) => Number(asset.slideIndex) === Number(slide.index));
-    if (existing?.path && fsSync.existsSync(existing.path)) {
-      nextAssets.push(existing);
+    const filename = `${item.id}-carousel-${String(slide.index).padStart(2, "0")}-${safeFilename(carousel.title)}.jpg`;
+    const localPath = path.join(paths.carouselDir, filename);
+
+    if (fsSync.existsSync(localPath)) {
+      console.log(`[Carousel] Memakai slide ${slide.index} yang sudah ada di lokal: ${localPath}`);
+      const existing = currentAssets.find((asset) => Number(asset.slideIndex) === Number(slide.index)) || {};
+      nextAssets.push({
+        ...existing,
+        slideIndex: slide.index,
+        path: localPath,
+        url: `/generated/carousels/${filename}`
+      });
       continue;
     }
 
     try {
+      console.log(`[Carousel] Membuat slide ${slide.index}/${carousel.slideCount} (${slide.type}) - Generate gambar background...`);
       const background = await generateCarouselBackground({ item, slide, size, quality });
+      console.log(`[Carousel] Menulis konten teks ke slide ${slide.index}...`);
       const rendered = await renderCarouselSlide({
         item,
         carousel,
@@ -123,8 +134,10 @@ export async function generateCarouselAssets(item, options = {}) {
         prompt: background.prompt
       });
       nextAssets.push(rendered);
+      console.log(`[Carousel] Slide ${slide.index} berhasil disimpan.`);
     } catch (error) {
       const message = `Carousel slide ${slide.index} gagal: ${error.message}`;
+      console.error(`[Carousel] Slide ${slide.index} error: ${error.message}`);
       if (options.strict) throw new Error(message);
       warnings.push(message);
     }

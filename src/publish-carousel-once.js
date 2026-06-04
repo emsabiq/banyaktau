@@ -1,5 +1,7 @@
 import fs from "node:fs/promises";
-import { config, ensureProjectDirs } from "./config.js";
+import fsSync from "node:fs";
+import path from "node:path";
+import { config, ensureProjectDirs, paths } from "./config.js";
 import { ensureCarousel } from "./pipeline.js";
 import { absolutizeGeneratedUrls, publicBaseUrl, remoteEnabled, uploadGeneratedStateAndAssets } from "./remote.js";
 import { publishCarouselToFacebook, publishCarouselToInstagram } from "./facebook.js";
@@ -36,10 +38,21 @@ function carouselImageUrls(item) {
 }
 
 function carouselImagePaths(item) {
-  return (item.assets?.carousels || [])
+  const assets = (item.assets?.carousels || [])
     .filter((asset) => asset?.path)
-    .sort((a, b) => Number(a.slideIndex || 0) - Number(b.slideIndex || 0))
-    .map((asset) => asset.path);
+    .sort((a, b) => Number(a.slideIndex || 0) - Number(b.slideIndex || 0));
+
+  return assets.map((asset) => {
+    if (fsSync.existsSync(asset.path)) {
+      return asset.path;
+    }
+    const filename = path.basename(asset.path);
+    const localPath = path.join(paths.carouselDir, filename);
+    if (fsSync.existsSync(localPath)) {
+      return localPath;
+    }
+    return asset.path;
+  });
 }
 
 function publicCarouselUrls(item) {
@@ -337,8 +350,12 @@ async function main() {
   const errors = {};
 
   for (const target of targets) {
-    if (target !== "facebook" && imageUrls.length < 2) {
+    if (target === "instagram" && imageUrls.length < 2) {
       errors[target] = "URL publik carousel belum siap.";
+      continue;
+    }
+    if (target === "tiktok" && Math.max(imageUrls.length, imagePaths.length) < 2) {
+      errors[target] = "Minimal 2 gambar carousel belum tersedia.";
       continue;
     }
     if (target === "facebook" && Math.max(imageUrls.length, imagePaths.length) < 2) {
