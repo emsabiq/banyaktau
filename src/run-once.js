@@ -57,7 +57,15 @@ if (!boolValue(process.env.BANYAKTAU_FORCE_GENERATE, false) && await dailyGenera
   process.exit(0);
 }
 
-const result = await generateFullItem(input, { withClip, requireClip: withClip });
+const carouselLimitReachedBeforeGenerate = await dailyCarouselLimitReached();
+const result = await generateFullItem(input, {
+  withClip,
+  requireClip: withClip,
+  withCarousel: !carouselLimitReachedBeforeGenerate
+});
+if (carouselLimitReachedBeforeGenerate) {
+  result.warnings.push(`Carousel tidak dibuat: batas harian carousel tercapai (${dailyCarouselLimit}/hari).`);
+}
 if (remoteEnabled()) {
   result.item = absolutizeGeneratedUrls(result.item);
   await mergeMemoryItems([result.item]);
