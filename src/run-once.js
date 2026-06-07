@@ -35,7 +35,8 @@ const withClip = false;
 const dailyGenerateLimit = Math.max(0, Number(process.env.BANYAKTAU_DAILY_GENERATE_LIMIT || "3") || 0);
 
 console.log("BanyakTau run started.");
-console.log(`Category=${input.category}, duration=${input.durationSec}, scenes=${input.sceneCount}, withClip=${withClip}`);
+console.log(`Category=${input.category}, duration=${input.durationSec}, scenes=${input.sceneCount}`);
+console.log(`Publish targets: ${process.env.BANYAKTAU_PUBLISH_TARGETS || 'auto'}`);
 if (requestedClip) {
   console.log("Clip video AI diminta, tetapi dilewati karena mode hemat gambar + TTS aktif.");
 }
@@ -136,21 +137,26 @@ async function publishSocialsIfEnabled(result, options = {}) {
     if (targets.includes("facebook")) {
       try {
         published.facebook = await publishToFacebook(publishOptions);
+        console.log(`[Publish] ✅ Facebook: ${published.facebook?.url || 'ok'}`);
       } catch (error) {
         published.errors = { ...(published.errors || {}), facebook: error.message };
+        console.error(`[Publish] ❌ Facebook: ${error.message}`);
       }
     }
     if (targets.includes("instagram")) {
       try {
         published.instagram = await publishToInstagram(publishOptions);
+        console.log(`[Publish] ✅ Instagram: ${published.instagram?.url || 'ok'}`);
       } catch (error) {
         published.errors = { ...(published.errors || {}), instagram: error.message };
+        console.error(`[Publish] ❌ Instagram: ${error.message}`);
       }
     }
     if (targets.includes("youtube")) {
       try {
         if (await youtubeDailyLimitReached()) {
           published.errors = { ...(published.errors || {}), youtube: `Batas upload YouTube harian tercapai (${config.youtube.dailyUploadLimit}/hari).` };
+          console.warn(`[Publish] ⏭️ YouTube: daily limit reached`);
         } else {
           published.youtube = await publishToYoutube({
             videoPath: item.assets?.video?.path || "",
@@ -159,9 +165,11 @@ async function publishSocialsIfEnabled(result, options = {}) {
             tags: ["BanyakTau", item.input?.category, item.input?.topic].filter(Boolean),
             thumbnailPath: item.assets?.thumbnail?.path || ""
           });
+          console.log(`[Publish] ✅ YouTube: ${published.youtube?.url || 'ok'}`);
         }
       } catch (error) {
         published.errors = { ...(published.errors || {}), youtube: error.message };
+        console.error(`[Publish] ❌ YouTube: ${error.message}`);
       }
     }
     if (targets.includes("tiktok")) {
@@ -171,8 +179,10 @@ async function publishSocialsIfEnabled(result, options = {}) {
           videoPath: item.assets?.video?.path || "",
           caption: socialDescription(item)
         });
+        console.log(`[Publish] ✅ TikTok: ${published.tiktok?.publishId || 'ok'}`);
       } catch (error) {
         published.errors = { ...(published.errors || {}), tiktok: error.message };
+        console.error(`[Publish] ❌ TikTok: ${error.message}`);
       }
     }
     const publishedAt = new Date().toISOString();

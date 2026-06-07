@@ -15,7 +15,7 @@ export async function requestKnowledgeJson(promptText) {
       messages: [
         {
           role: "system",
-          content: "You are an Indonesian educational short-video writer. Write factual, engaging, natural Indonesian narration for encyclopedia-style videos. Return valid JSON only."
+          content: "You are an Indonesian educational video writer. Write factual, engaging, natural Indonesian narration for encyclopedia-style short or long videos according to the user's requested format. Return valid JSON only."
         },
         { role: "user", content: promptText }
       ],
@@ -54,7 +54,7 @@ export async function generateSceneImage({ itemId, scene, size, quality }) {
   assertOpenAi();
   await fs.mkdir(paths.imageDir, { recursive: true });
 
-  const prompt = sanitizeImagePrompt(scene.imagePrompt);
+  const prompt = sanitizeImagePrompt(scene.imagePrompt, size);
   const response = await fetch(`${config.openai.baseUrl}/images/generations`, {
     method: "POST",
     headers: headersJson(),
@@ -87,7 +87,7 @@ export async function generateSceneImage({ itemId, scene, size, quality }) {
   }
 
   try {
-    await optimizeImage(rawPath, outputPath);
+    await optimizeImage(rawPath, outputPath, size);
     await fs.rm(rawPath, { force: true });
   } catch {
     filename = `${itemId}-scene-${scene.index}-${safeFilename(scene.screenText)}.png`;
@@ -104,12 +104,19 @@ export async function generateSceneImage({ itemId, scene, size, quality }) {
   };
 }
 
-function optimizeImage(inputPath, outputPath) {
+function optimizeImage(inputPath, outputPath, size = "") {
+  let scaleCrop = "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280";
+  if (size) {
+    const [w, h] = size.split("x").map(Number);
+    if (w > h) {
+      scaleCrop = "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720";
+    }
+  }
   return new Promise((resolve, reject) => {
     const child = spawn("ffmpeg", [
       "-y",
       "-i", inputPath,
-      "-vf", "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280",
+      "-vf", scaleCrop,
       "-frames:v", "1",
       "-q:v", "7",
       outputPath
@@ -124,7 +131,7 @@ function optimizeImage(inputPath, outputPath) {
   });
 }
 
-export async function generateOpenAiSpeech({ itemId, text, voice, filenameSuffix = "openai" }) {
+export async function generateOpenAiSpeech({ itemId, text, voice, instructions, filenameSuffix = "openai" }) {
   assertOpenAi();
   await fs.mkdir(paths.audioDir, { recursive: true });
 
@@ -138,7 +145,7 @@ export async function generateOpenAiSpeech({ itemId, text, voice, filenameSuffix
     response_format: "mp3"
   };
   if (!/dinoiki/i.test(config.openai.baseUrl)) {
-    payload.instructions = "Bacakan sepenuhnya dalam Bahasa Indonesia natural. Gaya suara hangat, penasaran, jelas, seperti kreator pengetahuan sedang menjelaskan fakta menarik kepada teman. Tempo sedang-cepat dan tetap santai; jangan terlalu lambat, jangan terdengar seperti robot, beri jeda ringan setelah kalimat penting, dan tekankan bagian hook dengan rasa ingin tahu.";
+    payload.instructions = instructions || "Bacakan sepenuhnya dalam Bahasa Indonesia natural. Gaya suara hangat, penasaran, jelas, seperti kreator pengetahuan sedang menjelaskan fakta menarik kepada teman. Tempo sedang dan tetap santai; jangan terdengar seperti robot, beri jeda ringan setelah kalimat penting, dan tekankan pertanyaan transisi dengan rasa ingin tahu.";
   }
   const response = await fetch(`${config.openai.baseUrl}/audio/speech`, {
     method: "POST",
@@ -216,10 +223,15 @@ function headersJson() {
   };
 }
 
-function sanitizeImagePrompt(value) {
+function sanitizeImagePrompt(value, size = "") {
+  let orientation = "vertical 9:16";
+  if (size) {
+    const [w, h] = size.split("x").map(Number);
+    if (w > h) orientation = "horizontal landscape 16:9";
+  }
   return [
     String(value || ""),
-    "vertical 9:16 editorial knowledge video illustration, Indonesian friendly educational visual style, cinematic but bright, high detail, clear subject, varied composition, no written text inside the image, no logo, no watermark, no celebrity likeness, no gore, no injury"
+    `${orientation} editorial knowledge video illustration, Indonesian friendly educational visual style, cinematic but bright, high detail, clear subject, varied composition, no written text inside the image, no logo, no watermark, no celebrity likeness, no gore, no injury`
   ].join(", ");
 }
 

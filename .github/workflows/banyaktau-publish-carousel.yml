@@ -28,7 +28,10 @@ name: BanyakTau Publish Carousel
         required: false
         default: "random"
   schedule:
-    - cron: "45 2 * * *"
+    # Primary: 11:00 WIB (04:00 UTC) — Publish 1 carousel ke TikTok, IG, FB
+    - cron: "0 4 * * *"
+    # Backup retry: 17:00 WIB (10:00 UTC) — Jika carousel pertama gagal
+    - cron: "0 10 * * *"
 
 concurrency:
   group: banyaktau-publish-carousel

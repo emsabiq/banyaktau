@@ -32,10 +32,11 @@ on:
         required: false
         default: "false"
   schedule:
-    # GitHub cron uses UTC. Runs at 08:15, 14:15, and 20:15 WIB/Asia-Bangkok.
-    - cron: "15 1 * * *"
-    - cron: "15 7 * * *"
-    - cron: "15 13 * * *"
+    # GitHub cron uses UTC.
+    # Primary: 08:30 WIB (01:30 UTC) — Generate 1 video + upload ke TikTok, IG, FB, YT
+    - cron: "30 1 * * *"
+    # Backup retry: 14:30 WIB (07:30 UTC) — Jika video pertama gagal
+    - cron: "30 7 * * *"
 
 concurrency:
   group: banyaktau-generate
@@ -89,7 +90,7 @@ jobs:
       GEMINI_API_KEY: ""
       GEMINI_BASE_URL: ""
       SPEECH_TEMPO: ${{ secrets.SPEECH_TEMPO || '1.15' }}
-      BANYAKTAU_DAILY_GENERATE_LIMIT: ${{ secrets.BANYAKTAU_DAILY_GENERATE_LIMIT || '3' }}
+      BANYAKTAU_DAILY_GENERATE_LIMIT: ${{ secrets.BANYAKTAU_DAILY_GENERATE_LIMIT || '1' }}
       BANYAKTAU_PUBLISH_TARGETS: ${{ secrets.BANYAKTAU_PUBLISH_TARGETS || 'all' }}
       BANYAKTAU_TIME_ZONE: ${{ secrets.BANYAKTAU_TIME_ZONE || 'Asia/Bangkok' }}
       BANYAKTAU_WORKFLOW_FILE: banyaktau-generate.yml

@@ -146,7 +146,7 @@ export const config = {
     videoUsdPerSecond: 0
   },
   render: {
-    fontTitle: clean(process.env.RENDER_TITLE_FONT || "Georgia"),
+    fontTitle: clean(process.env.RENDER_TITLE_FONT || "Bebas Neue"),
     fontBody: clean(process.env.RENDER_BODY_FONT || "Segoe UI Semibold"),
     fontMono: clean(process.env.RENDER_MONO_FONT || "Cascadia Code"),
     speechTempo: Math.min(1.3, Math.max(0.9, numberEnv("SPEECH_TEMPO", 1.15)))

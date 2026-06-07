@@ -297,7 +297,7 @@ async function main() {
   ensureProjectDirs();
   await importRemoteItems();
 
-  const targetMode = clean(argValue("--target", process.env.BANYAKTAU_CAROUSEL_TEST_TARGET || "all")).toLowerCase();
+  const targetMode = clean(argValue("--target", process.env.BANYAKTAU_CAROUSEL_TEST_TARGET || process.env.BANYAKTAU_CAROUSEL_TARGET || "all")).toLowerCase();
   const targets = resolveTargets(targetMode);
   const force = boolArg("--force", ["1", "true", "yes", "on"].includes(clean(process.env.BANYAKTAU_FORCE_CAROUSEL).toLowerCase()));
   const regenerate = boolArg("--regenerate", false);
@@ -365,14 +365,17 @@ async function main() {
     }
 
     try {
+      console.log(`[Carousel] Publishing ke ${target}...`);
       published[target] = await publishTarget(target, {
         imageUrls,
         imagePaths,
         title: publishItem.title,
         description: socialDescription(publishItem)
       });
+      console.log(`[Carousel] ✅ ${target} berhasil: ${JSON.stringify(published[target]).slice(0, 200)}`);
     } catch (error) {
       errors[target] = error.message;
+      console.error(`[Carousel] ❌ ${target} gagal: ${error.message}`);
     }
   }
 
@@ -402,6 +405,19 @@ async function main() {
       warnings.push(`Remote state setelah publish carousel gagal: ${error.message}`);
     }
   }
+
+  const platformSummary = targets.map((t) => {
+    if (published[t]) return `✅ ${t}`;
+    if (errors[t]) return `❌ ${t}: ${errors[t].slice(0, 80)}`;
+    return `⏭️ ${t}: skipped`;
+  }).join(" | ");
+
+  console.log("");
+  console.log("[Carousel] === HASIL PUBLISH CAROUSEL ===");
+  console.log(`[Carousel] ${platformSummary}`);
+  console.log(`[Carousel] Slide count: ${Math.max(imageUrls.length, imagePaths.length)}`);
+  console.log(`[Carousel] Item: ${publishItem.id} - ${publishItem.title}`);
+  console.log("");
 
   console.log(JSON.stringify({
     status: Object.keys(published).length ? "done" : "skipped",

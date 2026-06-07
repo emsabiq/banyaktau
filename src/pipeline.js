@@ -102,7 +102,13 @@ export async function ensureAudio(item, options = {}) {
     const text = narrationText(item);
     item.assets.audio = provider === "elevenlabs"
       ? await generateElevenLabsSpeech({ itemId: item.id, text, filenameSuffix: "elevenlabs-natural" })
-      : await generateOpenAiSpeech({ itemId: item.id, text, filenameSuffix: "openai-natural" });
+      : await generateOpenAiSpeech({
+          itemId: item.id,
+          text,
+          voice: options.voice,
+          instructions: options.instructions,
+          filenameSuffix: "openai-natural"
+        });
     item.assets.audio.characters = text.length;
     try {
       item.assets.captions = await transcribeSpeechSegments(item.assets.audio.path);
@@ -120,6 +126,90 @@ export async function ensureAudio(item, options = {}) {
     warnings.push(`TTS gagal: ${error.message}`);
     if (!hasWarningSink) throw error;
   }
+}
+
+/**
+ * Generate TTS per scene (termasuk scene reaction) untuk video longform.
+ * Setiap scene mendapatkan file audio sendiri + transkripsi timestamp asli,
+ * sehingga durasi visual mengikuti durasi audio dan subtitle selalu sinkron.
+ */
+export async function ensureLongformSceneAudio(item, options = {}) {
+  const warnings = options.warnings || [];
+  const provider = String(options.provider || item.input.ttsProvider || "openai").toLowerCase() === "elevenlabs"
+    ? "elevenlabs"
+    : "openai";
+  const scenes = item.plan?.scenes || [];
+  const sceneAudio = [];
+  let totalChars = 0;
+
+  for (const scene of scenes) {
+    const text = sceneNarrationText(scene);
+    if (!text) {
+      sceneAudio.push({ sceneIndex: scene.index, sceneType: scene.sceneType || "image", path: null, captions: [], characters: 0 });
+      continue;
+    }
+
+    const suffix = `scene-${String(scene.index).padStart(2, "0")}-${provider}-natural`;
+    let audio;
+    try {
+      audio = provider === "elevenlabs"
+        ? await generateElevenLabsSpeech({ itemId: item.id, text, filenameSuffix: suffix })
+        : await generateOpenAiSpeech({
+            itemId: item.id,
+            text,
+            voice: options.voice,
+            instructions: options.instructions,
+            filenameSuffix: suffix
+          });
+    } catch (error) {
+      if (options.strict) throw error;
+      warnings.push(`TTS scene ${scene.index} gagal: ${error.message}`);
+      sceneAudio.push({ sceneIndex: scene.index, sceneType: scene.sceneType || "image", path: null, captions: [], characters: 0 });
+      continue;
+    }
+
+    let captions = [];
+    try {
+      captions = await transcribeSpeechSegments(audio.path);
+    } catch (error) {
+      warnings.push(`Transkripsi subtitle scene ${scene.index} gagal: ${error.message}`);
+      captions = [];
+    }
+
+    totalChars += text.length;
+    sceneAudio.push({
+      sceneIndex: scene.index,
+      sceneType: scene.sceneType || "image",
+      provider,
+      path: audio.path,
+      url: audio.url,
+      characters: text.length,
+      captions
+    });
+  }
+
+  item.assets.sceneAudio = sceneAudio;
+  item.assets.audio = {
+    provider,
+    sceneBased: true,
+    characters: totalChars,
+    scenes: sceneAudio.filter((entry) => entry.path).length
+  };
+  item.input.ttsProvider = provider;
+  item.cost.ttsUsd = estimateTtsUsd(totalChars, provider, config.pricing);
+  updateTotalCost(item);
+  item.updatedAt = nowIso();
+  await saveItem(item);
+  return item;
+}
+
+function sceneNarrationText(scene) {
+  const raw = scene.sceneType === "summary"
+    ? (scene.narration || scene.screenText)
+    : (scene.narration || scene.screenText);
+  return String(raw || "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export async function ensureThumbnail(item, options = {}) {
@@ -195,6 +285,7 @@ async function generateImageWithRetry({ item, scene, size, quality }) {
 
 function narrationText(item) {
   return item.plan.scenes
+    .filter((scene) => scene.sceneType !== "reaction")
     .map((scene) => String(scene.narration || "").trim())
     .filter(Boolean)
     .join(" ")
