@@ -13,11 +13,15 @@ export function remoteEnabled() {
   return ["ftp", "sftp"].includes(remoteConfig().driver);
 }
 
-export function remoteConfig() {
+function resolvePrimaryDriver() {
   const requested = String(process.env.UPLOAD_DRIVER || "auto").toLowerCase();
-  const driver = requested === "auto"
-    ? process.env.SFTP_HOST ? "sftp" : process.env.FTP_HOST ? "ftp" : "none"
-    : requested;
+  if (requested === "auto") {
+    return process.env.SFTP_HOST ? "sftp" : process.env.FTP_HOST ? "ftp" : "none";
+  }
+  return requested;
+}
+
+export function remoteConfigFor(driver) {
   const prefix = driver === "ftp" ? "FTP" : "SFTP";
   const first = (name, fallback = "") => process.env[`${prefix}_${name}`] || fallback;
   return {
@@ -34,6 +38,26 @@ export function remoteConfig() {
   };
 }
 
+export function remoteConfig() {
+  return remoteConfigFor(resolvePrimaryDriver());
+}
+
+// Build an ordered list of usable transports: the primary driver first, then
+// the alternate driver as a fallback when its credentials are configured.
+// This protects against hosts that intermittently throttle SSH (SFTP) from
+// CI/datacenter IPs but still accept plain FTP, and vice versa.
+function remoteConfigChain() {
+  const primary = resolvePrimaryDriver();
+  const order = primary === "ftp" ? ["ftp", "sftp"] : ["sftp", "ftp"];
+  const chain = [];
+  for (const driver of order) {
+    if (driver !== "ftp" && driver !== "sftp") continue;
+    const cfg = remoteConfigFor(driver);
+    if (cfg.host && cfg.user && cfg.password && cfg.remoteDir) chain.push(cfg);
+  }
+  return chain;
+}
+
 export function assertRemoteConfig() {
   const cfg = remoteConfig();
   const missing = [];
@@ -46,10 +70,13 @@ export function assertRemoteConfig() {
 }
 
 export async function uploadGeneratedStateAndAssets(options = {}) {
-  const cfg = assertRemoteConfig();
-  // Retry the entire connect+upload session so a transient ETIMEDOUT or a
-  // dropped connection mid-transfer does not abort the whole carousel publish.
-  await retryRemote(() => withRemoteClient(cfg, async (client) => {
+  const chain = remoteConfigChain();
+  if (!chain.length) {
+    // Preserve the original explicit error about missing config.
+    assertRemoteConfig();
+  }
+
+  const runUpload = (cfg) => retryRemote(() => withRemoteClient(cfg, async (client) => {
     if (options.item) {
       await uploadItemAssets(client, options.item);
     } else {
@@ -65,6 +92,23 @@ export async function uploadGeneratedStateAndAssets(options = {}) {
       await uploadJsonFile(client, memoryPath, "state/memory.json");
     }
   }), cfg.uploadAttempts);
+
+  let lastError;
+  for (let index = 0; index < chain.length; index += 1) {
+    const cfg = chain[index];
+    try {
+      await runUpload(cfg);
+      if (index > 0) console.log(`[Remote] Upload sukses via fallback ${cfg.prefix}.`);
+      return;
+    } catch (error) {
+      lastError = error;
+      const next = chain[index + 1];
+      if (next) {
+        console.warn(`[Remote] ${cfg.prefix} gagal total (${error.message}). Coba transport fallback ${next.prefix}.`);
+      }
+    }
+  }
+  throw lastError;
 }
 
 export function absolutizeGeneratedUrls(item) {
