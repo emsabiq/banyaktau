@@ -137,7 +137,7 @@ jobs:
       TIKTOK_OPEN_ID: ${{ secrets.TIKTOK_OPEN_ID }}
       TIKTOK_SCOPE: ${{ secrets.TIKTOK_SCOPE }}
       TIKTOK_PUBLISH_MODE: ${{ secrets.TIKTOK_PUBLISH_MODE || 'direct' }}
-      TIKTOK_PRIVACY_LEVEL: "PUBLIC_BY_DEFAULT"
+      TIKTOK_PRIVACY_LEVEL: "PUBLIC_TO_EVERYONE"
       TIKTOK_DISABLE_DUET: ${{ secrets.TIKTOK_DISABLE_DUET || 'false' }}
       TIKTOK_DISABLE_COMMENT: ${{ secrets.TIKTOK_DISABLE_COMMENT || 'false' }}
       TIKTOK_DISABLE_STITCH: ${{ secrets.TIKTOK_DISABLE_STITCH || 'false' }}
