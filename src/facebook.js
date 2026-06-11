@@ -41,10 +41,10 @@ function assertFacebookConfig() {
   if (missing.length) throw new Error(`Config Facebook belum lengkap: ${missing.join(", ")}`);
 }
 
-function assertInstagramVideo({ videoUrl, durationSec }) {
+function assertInstagramVideo({ videoUrl, videoPath, durationSec }) {
   const missing = [];
   if (!config.instagram.enabled) missing.push("INSTAGRAM_UPLOAD_ENABLED=true");
-  if (!videoUrl) missing.push("public video URL");
+  if (!videoUrl && !videoPath) missing.push("public video URL atau path file lokal");
   if (missing.length) throw new Error(`Config Instagram belum lengkap: ${missing.join(", ")}`);
 
   const duration = Number(durationSec || 0);
@@ -204,6 +204,21 @@ async function uploadFacebookReelFromUrl({ token, uploadUrl, videoUrl }) {
   });
 }
 
+async function uploadLocalVideo({ token, uploadUrl, videoPath }) {
+  const stat = await fs.stat(videoPath);
+  const buffer = await fs.readFile(videoPath);
+  await fetchJson(uploadUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `OAuth ${token}`,
+      offset: "0",
+      file_size: String(stat.size),
+      "Content-Type": "application/octet-stream"
+    },
+    body: buffer
+  });
+}
+
 async function finishFacebookReel({ token, videoId, title, description }) {
   const url = new URL(graphUrl(`${config.facebook.pageId}/video_reels`));
   url.searchParams.set("access_token", token);
@@ -222,9 +237,13 @@ async function finishFacebookReel({ token, videoId, title, description }) {
   };
 }
 
-async function publishFacebookReel({ token, videoUrl, title, description }) {
+async function publishFacebookReel({ token, videoUrl, videoPath, title, description }) {
   const started = await startFacebookReel(token);
-  await uploadFacebookReelFromUrl({ token, uploadUrl: started.uploadUrl, videoUrl });
+  if (videoPath) {
+    await uploadLocalVideo({ token, uploadUrl: started.uploadUrl, videoPath });
+  } else {
+    await uploadFacebookReelFromUrl({ token, uploadUrl: started.uploadUrl, videoUrl });
+  }
   return finishFacebookReel({
     token,
     videoId: started.videoId,
@@ -251,6 +270,27 @@ async function createInstagramReelContainer({ token, igUserId, videoUrl, caption
   const containerId = clean(data.id);
   if (!containerId) throw new Error(`Instagram tidak mengembalikan container id: ${JSON.stringify(data).slice(0, 500)}`);
   return containerId;
+}
+
+async function createInstagramResumableReelContainer({ token, igUserId, caption }) {
+  const body = new URLSearchParams({
+    access_token: token,
+    media_type: "REELS",
+    upload_type: "resumable",
+    caption: normalizeDescription(caption),
+    share_to_feed: config.instagram.shareToFeed ? "true" : "false"
+  });
+  const data = await fetchJson(graphUrl(`${igUserId}/media`), {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body
+  });
+  const containerId = clean(data.id);
+  const uploadUrl = clean(data.uri || data.upload_url);
+  if (!containerId || !uploadUrl) {
+    throw new Error(`Instagram tidak mengembalikan container id/upload URI: ${JSON.stringify(data).slice(0, 500)}`);
+  }
+  return { containerId, uploadUrl };
 }
 
 async function createInstagramCarouselImageContainer({ token, igUserId, imageUrl }) {
@@ -339,15 +379,22 @@ async function resolveInstagramPermalink({ token, mediaId }) {
   }
 }
 
-export async function publishToInstagram({ videoUrl, title, description, coverUrl, durationSec }) {
-  assertInstagramVideo({ videoUrl, durationSec });
+export async function publishToInstagram({ videoUrl, videoPath, title, description, coverUrl, durationSec }) {
+  assertInstagramVideo({ videoUrl, videoPath, durationSec });
   const pageToken = await resolveOptionalPageAccessToken();
   const token = resolveInstagramAccessToken(pageToken);
   if (!token) throw new Error("INSTAGRAM_ACCESS_TOKEN belum diisi.");
 
   const igUserId = await resolveInstagramUserId(token);
   const caption = normalizeDescription(description || title);
-  const containerId = await createInstagramReelContainer({ token, igUserId, videoUrl, caption, coverUrl });
+  let containerId;
+  if (videoPath) {
+    const session = await createInstagramResumableReelContainer({ token, igUserId, caption });
+    containerId = session.containerId;
+    await uploadLocalVideo({ token, uploadUrl: session.uploadUrl, videoPath });
+  } else {
+    containerId = await createInstagramReelContainer({ token, igUserId, videoUrl, caption, coverUrl });
+  }
   await waitForInstagramContainer({ token, containerId });
   const mediaId = await publishInstagramContainer({ token, igUserId, containerId });
   const url = await resolveInstagramPermalink({ token, mediaId });
@@ -391,19 +438,24 @@ export async function publishCarouselToInstagram({ imageUrls, title, description
   };
 }
 
-export async function publishToFacebook({ videoUrl, title, description }) {
+export async function publishToFacebook({ videoUrl, videoPath, title, description }) {
   assertFacebookConfig();
-  if (!videoUrl) throw new Error("Facebook butuh public video URL.");
+  if (!videoUrl && !videoPath) throw new Error("Facebook butuh public video URL atau path file lokal.");
 
   const token = await resolvePageAccessToken();
   if (config.facebook.mediaType === "video") {
+    if (videoPath) {
+      console.warn("Facebook Page video tidak mendukung fallback file runner; memakai Reel upload lokal.");
+      return publishFacebookReel({ token, videoPath, title, description });
+    }
     return publishFacebookPageVideo({ token, videoUrl, title, description });
   }
 
   try {
-    return await publishFacebookReel({ token, videoUrl, title, description });
+    return await publishFacebookReel({ token, videoUrl, videoPath, title, description });
   } catch (error) {
     if (!config.facebook.reelFallbackEnabled) throw error;
+    if (!videoUrl) throw error;
     console.warn(`Facebook Reel gagal, coba fallback Page video: ${error.message}`);
     const fallback = await publishFacebookPageVideo({ token, videoUrl, title, description });
     return { ...fallback, fallbackFrom: "facebook_reel" };

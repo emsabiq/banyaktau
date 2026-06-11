@@ -67,19 +67,22 @@ if (remoteEnabled()) {
   result.item = absolutizeGeneratedUrls(result.item);
   await mergeMemoryItems([result.item]);
   await saveItem(result.item);
+  let remoteUploadError = null;
   try {
     await uploadGeneratedStateAndAssets({ item: result.item });
     console.log("Remote upload complete.");
-    await publishSocialsIfEnabled(result);
   } catch (error) {
+    remoteUploadError = error;
     const message = `Remote upload gagal: ${error.message}`;
     result.warnings.push(message);
     console.warn(message);
-    if (config.tiktok.enabled) await publishSocialsIfEnabled(result, { tiktokOnly: true });
-    if (boolValue(process.env.BANYAKTAU_STRICT_REMOTE, false)) throw error;
   }
-} else if (config.tiktok.enabled) {
-  await publishSocialsIfEnabled(result, { tiktokOnly: true });
+  await publishSocialsIfEnabled(result);
+  if (remoteUploadError && boolValue(process.env.BANYAKTAU_STRICT_REMOTE, false)) {
+    throw remoteUploadError;
+  }
+} else {
+  await publishSocialsIfEnabled(result);
 }
 
 console.log(JSON.stringify({
@@ -120,18 +123,19 @@ function normalizeMemoryPayload(value) {
   return [];
 }
 
-async function publishSocialsIfEnabled(result, options = {}) {
-  const tiktokOnly = Boolean(options.tiktokOnly);
-  const targets = resolvePublishTargets({ tiktokOnly });
+async function publishSocialsIfEnabled(result) {
+  const targets = resolvePublishTargets();
   if (!targets.length) return;
   try {
     const item = result.item;
     let published = { ok: false, errors: {} };
     const publishOptions = {
       videoUrl: item.assets?.video?.url || "",
+      videoPath: item.assets?.video?.path || "",
       title: item.title,
       description: socialDescription(item),
       coverUrl: item.assets?.thumbnail?.url || "",
+      coverPath: item.assets?.thumbnail?.path || "",
       durationSec: item.assets?.video?.durationSec || 0
     };
     if (targets.includes("facebook")) {
@@ -284,8 +288,7 @@ function publishTargetMode() {
     .toLowerCase();
 }
 
-function resolvePublishTargets(options = {}) {
-  if (options.tiktokOnly) return config.tiktok.enabled ? ["tiktok"] : [];
+function resolvePublishTargets() {
   const enabled = enabledPublishTargets();
   const mode = publishTargetMode();
   if (!enabled.length || ["none", "off", "false", "0"].includes(mode)) return [];
