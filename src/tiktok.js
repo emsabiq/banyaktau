@@ -305,8 +305,27 @@ export async function publishToTikTok({ videoUrl, videoPath, caption }) {
   if (!videoUrl && !videoPath) throw new Error("TikTok publish butuh public video URL atau path file video lokal.");
   assertTikTokPublishConfig();
 
+  // Prefer file upload when local file exists to avoid URL pull/redirect issues
+  if (videoPath && fs.existsSync(videoPath)) {
+    if (config.tiktok.publishMode === "inbox") {
+      return publishInbox({ videoPath, source: "FILE_UPLOAD" });
+    }
+    try {
+      return await publishDirect({ videoPath, caption, source: "FILE_UPLOAD" });
+    } catch (error) {
+      if (isUnauditedDirectPostError(error)) {
+        console.warn(`TikTok direct post dibatasi audit app, fallback ke inbox upload: ${error.message}`);
+        return publishInbox({ videoPath, source: "FILE_UPLOAD" });
+      }
+      if (config.tiktok.publishMode === "direct") throw error;
+      console.warn(`TikTok direct post gagal, coba inbox upload: ${error.message}`);
+      return publishInbox({ videoPath, source: "FILE_UPLOAD" });
+    }
+  }
+
+  // URL-based upload fallback
   if (config.tiktok.publishMode === "inbox") {
-    if (!videoUrl) return publishInbox({ videoPath, source: "FILE_UPLOAD" });
+    if (!videoUrl) throw new Error("TikTok publish butuh video URL atau path file video lokal.");
     try {
       return await publishInbox({ videoUrl });
     } catch (error) {
